@@ -15,15 +15,27 @@ typedef struct
     HANDLE mpqHandle;
 } MPQHandle;
 
+typedef struct
+{
+    HANDLE fileHandle;
+    PHYSFS_sint64 size;
+} MPQFileHandle;
+
 static PHYSFS_sint64 MPQ_read(PHYSFS_Io *io, void *buf, PHYSFS_uint64 len)
 {
+    MPQFileHandle *handle = (MPQFileHandle*)io->opaque;
     DWORD dwBytesRead;
-    DWORD dwBytesToRead = (DWORD)len;
-    SFileReadFile(io->opaque, buf, dwBytesToRead, &dwBytesRead, NULL);
+    DWORD dwBytesToRead;
+
+    if (len < (PHYSFS_uint64)handle->size)
+        dwBytesToRead = (DWORD)len;
+    else
+        dwBytesToRead = (DWORD)handle->size;
+
+    SFileReadFile(handle->fileHandle, buf, dwBytesToRead, &dwBytesRead, NULL);
     if (dwBytesRead != dwBytesToRead)
-    {
         return -1L;
-    }
+
     return (PHYSFS_sint64)dwBytesRead;
 }
 
@@ -34,30 +46,30 @@ static PHYSFS_sint64 MPQ_write(PHYSFS_Io *io, const void *b, PHYSFS_uint64 len)
 
 static PHYSFS_sint64 MPQ_tell(PHYSFS_Io *io)
 {
+    MPQFileHandle *handle = (MPQFileHandle*)io->opaque;
     LONG FilePosHi = 0;
     DWORD FilePosLo;
-    FilePosLo = SFileSetFilePointer(io->opaque, 0, &FilePosHi, FILE_CURRENT);
+    FilePosLo = SFileSetFilePointer(handle->fileHandle, 0, &FilePosHi, FILE_CURRENT);
     return (((PHYSFS_sint64)FilePosHi << 32) | (PHYSFS_sint64)FilePosLo);
 }
 
 static int MPQ_seek(PHYSFS_Io *io, PHYSFS_uint64 offset)
 {
+    MPQFileHandle *handle = (MPQFileHandle*)io->opaque;
     LONG DeltaPosHi = (LONG)(offset >> 32);
     LONG DeltaPosLo = (LONG)(offset);
-    SFileSetFilePointer(io->opaque, DeltaPosLo, &DeltaPosHi, FILE_BEGIN);
+    SFileSetFilePointer(handle->fileHandle, DeltaPosLo, &DeltaPosHi, FILE_BEGIN);
     return 1;
 }
 
 static PHYSFS_sint64 MPQ_length(PHYSFS_Io *io)
 {
-    DWORD dwFileSizeHi = 0xCCCCCCCC;
-    DWORD dwFileSizeLo = 0;
-    dwFileSizeLo = SFileGetFileSize(io->opaque, &dwFileSizeHi);
-    if (dwFileSizeLo == SFILE_INVALID_SIZE || dwFileSizeHi != 0)
-    {
-        return -1L;
-    }
-    return (PHYSFS_sint64)dwFileSizeLo;
+    MPQFileHandle *handle = (MPQFileHandle*)io->opaque;
+
+    if (handle->fileHandle)
+        return handle->size;
+
+    return -1L;
 }
 
 static PHYSFS_Io *MPQ_duplicate(PHYSFS_Io *io)
@@ -69,11 +81,14 @@ static int MPQ_flush(PHYSFS_Io *io) { return 1;  /* no write support. */ }
 
 static void MPQ_destroy(PHYSFS_Io *io)
 {
-    HANDLE hFile = (HANDLE)io->opaque;
-    if (hFile != NULL)
+    MPQFileHandle *handle = (MPQFileHandle*)io->opaque;
+    if (handle != NULL)
     {
-        SFileCloseFile(hFile);
-        io->opaque = NULL;
+        if (handle->fileHandle != NULL)
+        {
+            SFileCloseFile(handle->fileHandle);
+        }
+        physfs_alloc.Free(handle);
     }
     physfs_alloc.Free(io);
 }
@@ -145,8 +160,11 @@ static PHYSFS_Io *MPQ_openRead(void *opaque, const char *filename)
 {
     char *filename2 = NULL;
     HANDLE hFile;
-    char success;
     PHYSFS_Io *retval = NULL;
+    MPQFileHandle *handle = NULL;
+    DWORD dwFileSizeHi = 0xCCCCCCCC;
+    DWORD dwFileSizeLo = 0;
+    char success;
 
     if (!opaque)
         return NULL;
@@ -168,8 +186,28 @@ static PHYSFS_Io *MPQ_openRead(void *opaque, const char *filename)
         return NULL;
     }
 
+    handle = (MPQFileHandle *)physfs_alloc.Malloc(sizeof(MPQFileHandle));
+    if (!handle)
+    {
+        physfs_alloc.Free(retval);
+        SFileCloseFile(hFile);
+        return NULL;
+    }
+
+    dwFileSizeLo = SFileGetFileSize(hFile, &dwFileSizeHi);
+    if (dwFileSizeLo == SFILE_INVALID_SIZE || dwFileSizeHi != 0)
+    {
+        physfs_alloc.Free(retval);
+        physfs_alloc.Free(hFile);
+        SFileCloseFile(hFile);
+        return NULL;
+    }
+
+    handle->fileHandle = hFile;
+    handle->size = (PHYSFS_sint64)dwFileSizeLo;
+
     memcpy(retval, &MPQ_Io, sizeof(PHYSFS_Io));
-    retval->opaque = hFile;
+    retval->opaque = handle;
 
     return retval;
 }
