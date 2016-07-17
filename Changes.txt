@@ -1,0 +1,8 @@
+This fork of PhysicsFS add MPQ files support through
+StormLib from Ladislav Zezula.
+
+The changes are mainly in archiver_mpq.c
+Only read only support is implemented.
+
+The name allocator was changed to physfs_alloc to prevent
+a naming conflict with Windows headers (included in stormLib).

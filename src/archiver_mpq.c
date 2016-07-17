@@ -1,0 +1,266 @@
+/*
+ * MPQ support routines for PhysicsFS.
+ */
+
+#define __PHYSICSFS_INTERNAL__
+#include "physfs_internal.h"
+
+#if PHYSFS_SUPPORTS_MPQ
+
+#include "../StormLib/src/StormLib.h"
+
+typedef struct
+{
+    PHYSFS_Io *io;
+    HANDLE mpqHandle;
+} MPQHandle;
+
+static PHYSFS_sint64 MPQ_read(PHYSFS_Io *io, void *buf, PHYSFS_uint64 len)
+{
+    DWORD dwBytesRead;
+    DWORD dwBytesToRead = (DWORD)len;
+    SFileReadFile(io->opaque, buf, dwBytesToRead, &dwBytesRead, NULL);
+    if (dwBytesRead != dwBytesToRead)
+    {
+        return -1L;
+    }
+    return (PHYSFS_sint64)dwBytesRead;
+}
+
+static PHYSFS_sint64 MPQ_write(PHYSFS_Io *io, const void *b, PHYSFS_uint64 len)
+{
+    BAIL_MACRO(PHYSFS_ERR_READ_ONLY, -1);
+}
+
+static PHYSFS_sint64 MPQ_tell(PHYSFS_Io *io)
+{
+    LONG FilePosHi = 0;
+    DWORD FilePosLo;
+    FilePosLo = SFileSetFilePointer(io->opaque, 0, &FilePosHi, FILE_CURRENT);
+    return (((PHYSFS_sint64)FilePosHi << 32) | (PHYSFS_sint64)FilePosLo);
+}
+
+static int MPQ_seek(PHYSFS_Io *io, PHYSFS_uint64 offset)
+{
+    LONG DeltaPosHi = (LONG)(offset >> 32);
+    LONG DeltaPosLo = (LONG)(offset);
+    SFileSetFilePointer(io->opaque, DeltaPosLo, &DeltaPosHi, FILE_BEGIN);
+    return 1;
+}
+
+static PHYSFS_sint64 MPQ_length(PHYSFS_Io *io)
+{
+    DWORD dwFileSizeHi = 0xCCCCCCCC;
+    DWORD dwFileSizeLo = 0;
+    dwFileSizeLo = SFileGetFileSize(io->opaque, &dwFileSizeHi);
+    if (dwFileSizeLo == SFILE_INVALID_SIZE || dwFileSizeHi != 0)
+    {
+        return -1L;
+    }
+    return (PHYSFS_sint64)dwFileSizeLo;
+}
+
+static PHYSFS_Io *MPQ_duplicate(PHYSFS_Io *io)
+{
+    BAIL_MACRO(PHYSFS_ERR_UNSUPPORTED, NULL);  /* !!! FIXME: write me. */
+}
+
+static int MPQ_flush(PHYSFS_Io *io) { return 1;  /* no write support. */ }
+
+static void MPQ_destroy(PHYSFS_Io *io)
+{
+    HANDLE hFile = (HANDLE)io->opaque;
+    if (hFile != NULL)
+    {
+        SFileCloseFile(hFile);
+        io->opaque = NULL;
+    }
+    physfs_alloc.Free(io);
+}
+
+static const PHYSFS_Io MPQ_Io =
+{
+    CURRENT_PHYSFS_IO_API_VERSION, NULL,
+    MPQ_read,
+    MPQ_write,
+    MPQ_seek,
+    MPQ_tell,
+    MPQ_length,
+    MPQ_duplicate,
+    MPQ_flush,
+    MPQ_destroy
+};
+
+static void *MPQ_openArchive(PHYSFS_Io *io, const char *filename, int forWriting)
+{
+    HANDLE hMpq = NULL;
+    DWORD dwFlags = MPQ_OPEN_READ_ONLY;
+    MPQHandle *handle = NULL;
+
+    assert(io != NULL);  /* shouldn't ever happen. */
+
+    BAIL_IF_MACRO(forWriting, PHYSFS_ERR_READ_ONLY, NULL);
+
+    if (!SFileOpenArchive(filename, 0, dwFlags, &hMpq))
+        return NULL;
+
+    handle = (MPQHandle *)physfs_alloc.Malloc(sizeof(MPQHandle));
+    if (handle)
+    {
+        handle->io = io;
+        handle->mpqHandle = hMpq;
+    }
+    return handle;
+}
+
+static void MPQ_enumerateFiles(void *opaque, const char *dname,
+                               PHYSFS_EnumFilesCallback cb,
+                               const char *origdir, void *callbackdata)
+{
+}
+
+static char *MPQ_getValidFilename(const char *filename)
+{
+    char *filename2 = NULL;
+    char *chr;
+
+    filename2 = physfs_alloc.Malloc(strlen(filename) + 1);
+    if (!filename2)
+        return NULL;
+
+    strcpy(filename2, filename);
+    chr = filename2;
+    while (chr[0] != 0)
+    {
+        if (chr[0] == '/')
+        {
+            chr[0] = '\\';
+        }
+        chr++;
+    }
+    return filename2;
+}
+
+static PHYSFS_Io *MPQ_openRead(void *opaque, const char *filename)
+{
+    char *filename2 = NULL;
+    HANDLE hFile;
+    char success;
+    PHYSFS_Io *retval = NULL;
+
+    if (!opaque)
+        return NULL;
+
+    filename2 = MPQ_getValidFilename(filename);
+    if (!filename2)
+        return NULL;
+
+    success = SFileOpenFileEx(((MPQHandle *)opaque)->mpqHandle, filename2, 0, &hFile);
+    physfs_alloc.Free(filename2);
+
+    if (!success)
+        return NULL;
+
+    retval = (PHYSFS_Io *)physfs_alloc.Malloc(sizeof(PHYSFS_Io));
+    if (!retval)
+    {
+        SFileCloseFile(hFile);
+        return NULL;
+    }
+
+    memcpy(retval, &MPQ_Io, sizeof(PHYSFS_Io));
+    retval->opaque = hFile;
+
+    return retval;
+}
+
+static PHYSFS_Io *MPQ_openWrite(void *opaque, const char *filename)
+{
+    BAIL_MACRO(PHYSFS_ERR_READ_ONLY, NULL);
+}
+
+static PHYSFS_Io *MPQ_openAppend(void *opaque, const char *filename)
+{
+    BAIL_MACRO(PHYSFS_ERR_READ_ONLY, NULL);
+}
+
+static int MPQ_remove(void *opaque, const char *filename)
+{
+    BAIL_MACRO(PHYSFS_ERR_READ_ONLY, 0);
+}
+
+static int MPQ_mkdir(void *opaque, const char *filename)
+{
+    BAIL_MACRO(PHYSFS_ERR_READ_ONLY, 0);
+}
+
+static int MPQ_stat(void *opaque, const char *filename, PHYSFS_Stat *stat)
+{
+    char *filename2 = NULL;
+    HANDLE hFile;
+    char success;
+    DWORD fileSize = 0;
+
+    if (!opaque)
+        return 0;
+
+    filename2 = MPQ_getValidFilename(filename);
+    if (!filename2)
+        return 0;
+
+    success = SFileOpenFileEx(((MPQHandle *)opaque)->mpqHandle, filename2, 0, &hFile);
+    physfs_alloc.Free(filename2);
+
+    if (!success)
+        return 0;
+
+    SFileGetFileInfo(hFile, SFileInfoFileSize, &fileSize, sizeof(fileSize), NULL);
+    stat->filesize = fileSize;
+
+    stat->modtime = 0;
+    SFileGetFileInfo((HANDLE)opaque, SFileInfoFileTime, &stat->modtime, sizeof(stat->modtime), NULL);
+    stat->createtime = stat->modtime;
+    stat->accesstime = 0;
+    stat->filetype = PHYSFS_FILETYPE_REGULAR;
+    stat->readonly = 1; /* .MPQ files are always read only */
+
+    return 1;
+}
+
+static void MPQ_closeArchive(void *opaque)
+{
+    MPQHandle *handle = (MPQHandle*)opaque;
+
+    if (!handle)
+        return;
+
+    SFileCloseArchive(handle->mpqHandle);
+    handle->io->destroy(handle->io);
+    physfs_alloc.Free(handle);
+}
+
+const PHYSFS_Archiver __PHYSFS_Archiver_MPQ =
+{
+    CURRENT_PHYSFS_ARCHIVER_API_VERSION,
+    {
+        "MPQ",
+        "Blizzard Entertainment format",
+        "",
+        "",
+        1,  /* supportsSymlinks */
+    },
+    MPQ_openArchive,
+    MPQ_enumerateFiles,
+    MPQ_openRead,
+    MPQ_openWrite,
+    MPQ_openAppend,
+    MPQ_remove,
+    MPQ_mkdir,
+    MPQ_stat,
+    MPQ_closeArchive
+};
+
+#endif  /* defined PHYSFS_SUPPORTS_MPQ */
+
+/* end of archiver_mpq.c ... */
+
