@@ -1,4 +1,4 @@
-This fork of PhysicsFS add MPQ files support through
+This fork of PhysicsFS adds MPQ files support through
 StormLib from Ladislav Zezula.
 
 The changes are mainly in archiver_mpq.c
