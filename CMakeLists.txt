@@ -103,6 +103,25 @@ set(LZMA_SRCS
     src/lzma/C/Compress/Lzma/LzmaDecode.c
 )
 
+set(STORMLIB_SRCS
+    src/StormLib/FileStream.cpp
+    src/StormLib/FileStream.h
+    src/StormLib/pklib/explode.c
+    src/StormLib/pklib/pklib.h
+    src/StormLib/SBaseCommon.cpp
+    src/StormLib/SBaseFileTable.cpp
+    src/StormLib/SCompression.cpp
+    src/StormLib/SFileFindFile.cpp
+    src/StormLib/SFileGetFileInfo.cpp
+    src/StormLib/SFileListFile.cpp
+    src/StormLib/SFileOpenArchive.cpp
+    src/StormLib/SFileOpenFileEx.cpp
+    src/StormLib/SFileReadFile.cpp
+    src/StormLib/StormCommon.h
+    src/StormLib/StormLib.h
+    src/StormLib/StormPort.h
+)
+
 if(BEOS)
     # We add this explicitly, since we don't want CMake to think this
     #  is a C++ project unless we're on BeOS.
@@ -247,6 +266,7 @@ endif()
 option(PHYSFS_ARCHIVE_MPQ "Enable Diablo MPQ support" TRUE)
 if(PHYSFS_ARCHIVE_MPQ)
     add_definitions(-DPHYSFS_SUPPORTS_MPQ=1)
+    set(PHYSFS_SRCS ${PHYSFS_SRCS} ${STORMLIB_SRCS})
 endif()
 
 option(PHYSFS_ARCHIVE_MVL "Enable Descent I/II MVL support" TRUE)

@@ -567,7 +567,7 @@ static void BaseMap_Init(TFileStream * pStream)
 
 //-----------------------------------------------------------------------------
 // Local functions - base HTTP file support
-
+#ifdef PLATFORM_WINDOWS
 static const TCHAR * BaseHttp_ExtractServerName(const TCHAR * szFileName, TCHAR * szServerName)
 {
     // Check for HTTP
@@ -590,6 +590,7 @@ static const TCHAR * BaseHttp_ExtractServerName(const TCHAR * szFileName, TCHAR 
     // Return the remainder
     return szFileName;
 }
+#endif
 
 static bool BaseHttp_Open(TFileStream * pStream, const TCHAR * szFileName, DWORD dwStreamFlags)
 {

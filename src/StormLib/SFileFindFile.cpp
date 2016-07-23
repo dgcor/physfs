@@ -69,7 +69,7 @@ bool CheckWildCard(const char * szString, const char * szWildCard)
                 if(szWildCardPtr[0] == 0)
                     return true;
 
-                if(AsciiToUpperTable[szWildCardPtr[0]] == AsciiToUpperTable[szString[0]])
+                if(AsciiToUpperTable[(size_t)szWildCardPtr[0]] == AsciiToUpperTable[(size_t)szString[0]])
                 {
                     if(CheckWildCard(szString, szWildCardPtr))
                         return true;
@@ -77,7 +77,7 @@ bool CheckWildCard(const char * szString, const char * szWildCard)
             }
             else
             {
-                if(AsciiToUpperTable[szWildCardPtr[0]] != AsciiToUpperTable[szString[0]])
+                if(AsciiToUpperTable[(size_t)szWildCardPtr[0]] != AsciiToUpperTable[(size_t)szString[0]])
                     return false;
 
                 szWildCard = szWildCardPtr + 1;
