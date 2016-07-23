@@ -1,0 +1,18 @@
+These are the build instructions for PhysicsFS for Android.
+The Android makefile defines the following formats:
+
+7ZIP, MPQ, ZIP
+
+Copy the /src folder here. You should have this folder structure:
+
+src/*
+Android.mk
+BUILD.txt
+
+Copy this folder (android) to your Android NDK's sources folder.
+
+Add the following to the Android.mk of your project:
+
+LOCAL_SHARED_LIBRARIES += libphysfs
+
+$(call import-module,physfs)

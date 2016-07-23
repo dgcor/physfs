@@ -7,7 +7,7 @@
 
 #if PHYSFS_SUPPORTS_MPQ
 
-#include "../StormLib/src/StormLib.h"
+#include "StormLib/StormLib.h"
 
 typedef struct
 {
