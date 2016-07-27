@@ -49,9 +49,7 @@ LOCAL_SRC_FILES := \
 	$(LOCAL_PATH)/src/StormLib/SBaseCommon.cpp \
 	$(LOCAL_PATH)/src/StormLib/SBaseFileTable.cpp \
 	$(LOCAL_PATH)/src/StormLib/SCompression.cpp \
-	$(LOCAL_PATH)/src/StormLib/SFileFindFile.cpp \
 	$(LOCAL_PATH)/src/StormLib/SFileGetFileInfo.cpp \
-	$(LOCAL_PATH)/src/StormLib/SFileListFile.cpp \
 	$(LOCAL_PATH)/src/StormLib/SFileOpenArchive.cpp \
 	$(LOCAL_PATH)/src/StormLib/SFileOpenFileEx.cpp \
 	$(LOCAL_PATH)/src/StormLib/SFileReadFile.cpp \
