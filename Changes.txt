@@ -6,3 +6,12 @@ Only read only support is implemented.
 
 The name allocator was changed to physfs_alloc to prevent
 a naming conflict with Windows headers (included in stormLib).
+
+You enable MPQ support in CMake using
+
+PHYSFS_ARCHIVE_MPQ
+
+If you want to use an external StormLib (the embedded one
+only reads MPQ v1 archives), use the option
+
+PHYSFS_USE_EXTERNAL_STORMLIB

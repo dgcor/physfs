@@ -111,9 +111,7 @@ set(STORMLIB_SRCS
     src/StormLib/SBaseCommon.cpp
     src/StormLib/SBaseFileTable.cpp
     src/StormLib/SCompression.cpp
-    src/StormLib/SFileFindFile.cpp
     src/StormLib/SFileGetFileInfo.cpp
-    src/StormLib/SFileListFile.cpp
     src/StormLib/SFileOpenArchive.cpp
     src/StormLib/SFileOpenFileEx.cpp
     src/StormLib/SFileReadFile.cpp
@@ -264,9 +262,14 @@ if(PHYSFS_ARCHIVE_HOG)
 endif()
 
 option(PHYSFS_ARCHIVE_MPQ "Enable Diablo MPQ support" TRUE)
+option(PHYSFS_USE_EXTERNAL_STORMLIB "Use external StormLib for MPQ support" FALSE)
 if(PHYSFS_ARCHIVE_MPQ)
     add_definitions(-DPHYSFS_SUPPORTS_MPQ=1)
-    set(PHYSFS_SRCS ${PHYSFS_SRCS} ${STORMLIB_SRCS})
+    if(PHYSFS_USE_EXTERNAL_STORMLIB)
+        add_definitions(-DPHYSFS_USE_EXTERNAL_STORMLIB=1)
+    else()
+        set(PHYSFS_SRCS ${PHYSFS_SRCS} ${STORMLIB_SRCS})
+    endif()
 endif()
 
 option(PHYSFS_ARCHIVE_MVL "Enable Descent I/II MVL support" TRUE)

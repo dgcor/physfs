@@ -88,51 +88,6 @@ extern "C" {
 #endif
 
 //-----------------------------------------------------------------------------
-// Use the apropriate library
-//
-// The library type is encoded in the library name as the following
-// StormLibXYZ.lib
-// 
-//  X - D for Debug version, R for Release version
-//  Y - A for ANSI version, U for Unicode version
-//  Z - S for static-linked CRT library, D for multithreaded DLL CRT library
-//
-
-#if defined(_MSC_VER) && !defined(__STORMLIB_SELF__)
-  
-  #ifdef _DEBUG                                 // DEBUG VERSIONS
-    #ifndef _UNICODE                            
-      #ifdef _DLL                               
-        #pragma comment(lib, "StormLibDAD.lib") // Debug Ansi CRT-DLL version
-      #else        
-        #pragma comment(lib, "StormLibDAS.lib") // Debug Ansi CRT-LIB version
-      #endif
-    #else
-      #ifdef _DLL                               
-        #pragma comment(lib, "StormLibDUD.lib") // Debug Unicode CRT-DLL version
-      #else        
-        #pragma comment(lib, "StormLibDUS.lib") // Debug Unicode CRT-LIB version
-      #endif
-    #endif
-  #else                                         // RELEASE VERSIONS
-    #ifndef _UNICODE                            
-      #ifdef _DLL
-        #pragma comment(lib, "StormLibRAD.lib") // Release Ansi CRT-DLL version
-      #else        
-        #pragma comment(lib, "StormLibRAS.lib") // Release Ansi CRT-LIB version
-      #endif
-    #else
-      #ifdef _DLL
-        #pragma comment(lib, "StormLibRUD.lib") // Release Unicode CRT-DLL version
-      #else        
-        #pragma comment(lib, "StormLibRUS.lib") // Release Unicode CRT-LIB version
-      #endif
-    #endif
-  #endif
-
-#endif
-
-//-----------------------------------------------------------------------------
 // Defines
 
 #define STORMLIB_VERSION                0x0914  // Current version of StormLib (9.20)

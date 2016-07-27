@@ -7,7 +7,11 @@
 
 #if PHYSFS_SUPPORTS_MPQ
 
+#if PHYSFS_USE_EXTERNAL_STORMLIB
+#include "../StormLib/src/StormLib.h"
+#else
 #include "StormLib/StormLib.h"
+#endif
 
 typedef struct
 {
@@ -139,11 +143,10 @@ static char *MPQ_getValidFilename(const char *filename)
     char *filename2 = NULL;
     char *chr;
 
-    filename2 = physfs_alloc.Malloc(strlen(filename) + 1);
+    filename2 = __PHYSFS_strdup(filename);
     if (!filename2)
         return NULL;
 
-    strcpy(filename2, filename);
     chr = filename2;
     while (chr[0] != 0)
     {
