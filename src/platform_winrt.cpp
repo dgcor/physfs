@@ -194,10 +194,10 @@ static char *unicodeToUtf8Heap(const WCHAR *w_str)
 	{
 		void *ptr = NULL;
 		const PHYSFS_uint64 len = (wStrLen(w_str) * 4) + 1;
-		retval = (char*)allocator.Malloc(len);
+		retval = (char*)physfs_alloc.Malloc(len);
 		BAIL_IF_MACRO(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
 		PHYSFS_utf8FromUtf16((const PHYSFS_uint16 *)w_str, retval, len);
-		ptr = allocator.Realloc(retval, strlen(retval) + 1); /* shrink. */
+		ptr = physfs_alloc.Realloc(retval, strlen(retval) + 1); /* shrink. */
 		if (ptr != NULL)
 			retval = (char *)ptr;
 	} /* if */
@@ -302,7 +302,7 @@ void __PHYSFS_platformEnumerateFiles(const char *dirname,
 		if (utf8 != NULL)
 		{
 			callback(callbackdata, origdir, utf8);
-			allocator.Free(utf8);
+			physfs_alloc.Free(utf8);
 		} /* if */
 	} while (FindNextFileW(dir, &entw) != 0);
 
@@ -348,7 +348,7 @@ static void *doOpen(const char *fname, DWORD mode, DWORD creation, int rdonly)
 
 	BAIL_IF_MACRO(fileh == INVALID_HANDLE_VALUE, errcodeFromWinApi(), NULL);
 
-	retval = (WinApiFile *)allocator.Malloc(sizeof(WinApiFile));
+	retval = (WinApiFile *)physfs_alloc.Malloc(sizeof(WinApiFile));
 	if (!retval)
 	{
 		CloseHandle(fileh);
@@ -386,7 +386,7 @@ void *__PHYSFS_platformOpenAppend(const char *filename)
 		{
 			const PHYSFS_ErrorCode err = errcodeFromWinApi();
 			CloseHandle(h);
-			allocator.Free(retval);
+			physfs_alloc.Free(retval);
 			BAIL_MACRO(err, NULL);
 		} /* if */
 	} /* if */
@@ -523,7 +523,7 @@ void __PHYSFS_platformClose(void *opaque)
 {
 	HANDLE Handle = ((WinApiFile *)opaque)->handle;
 	(void)CloseHandle(Handle); /* ignore errors. You should have flushed! */
-	allocator.Free(opaque);
+	physfs_alloc.Free(opaque);
 } /* __PHYSFS_platformClose */
 
 
@@ -558,7 +558,7 @@ int __PHYSFS_platformDelete(const char *path)
 void *__PHYSFS_platformCreateMutex(void)
 {
 	LPCRITICAL_SECTION lpcs;
-	lpcs = (LPCRITICAL_SECTION)allocator.Malloc(sizeof(CRITICAL_SECTION));
+	lpcs = (LPCRITICAL_SECTION)physfs_alloc.Malloc(sizeof(CRITICAL_SECTION));
 	BAIL_IF_MACRO(!lpcs, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
 	//InitializeCriticalSection(lpcs);
 	InitializeCriticalSectionEx(lpcs, 2000, 0);
@@ -569,7 +569,7 @@ void *__PHYSFS_platformCreateMutex(void)
 void __PHYSFS_platformDestroyMutex(void *mutex)
 {
 	DeleteCriticalSection((LPCRITICAL_SECTION)mutex);
-	allocator.Free(mutex);
+	physfs_alloc.Free(mutex);
 } /* __PHYSFS_platformDestroyMutex */
 
 

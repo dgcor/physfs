@@ -177,7 +177,7 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0)
     const char *str = path.Path();
     assert(str != NULL);
     const size_t len = strlen(str);
-    char *retval = (char *) allocator.Malloc(len + 2);
+    char *retval = (char *) physfs_alloc.Malloc(len + 2);
     BAIL_IF_MACRO(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     strcpy(retval, str);
     retval[len] = '/';
@@ -191,7 +191,7 @@ char *__PHYSFS_platformCalcPrefDir(const char *org, const char *app)
     const char *userdir = __PHYSFS_getUserDir();
     const char *append = "config/settings/";
     const size_t len = strlen(userdir) + strlen(append) + strlen(app) + 2;
-    char *retval = allocator.Malloc(len);
+    char *retval = physfs_alloc.Malloc(len);
     BAIL_IF_MACRO(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     snprintf(retval, len, "%s%s%s/", userdir, append, app);
     return retval;
