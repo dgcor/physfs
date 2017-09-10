@@ -1,6 +1,8 @@
 #define __PHYSICSFS_INTERNAL__
 #include "physfs_internal.h"
 
+#include "physfs_casefolding.h"
+
 
 /*
  * From rfc3629, the UTF-8 spec:
@@ -187,6 +189,48 @@ static PHYSFS_uint32 utf8codepoint(const char **_str)
 
     return UNICODE_BOGUS_CHAR_VALUE;
 } /* utf8codepoint */
+
+static PHYSFS_uint32 utf16codepoint(const PHYSFS_uint16 **_str)
+{
+    const PHYSFS_uint16 *src = *_str;
+    PHYSFS_uint32 cp = (PHYSFS_uint32) *(src++);
+
+    if (cp == 0)  /* null terminator, end of string. */
+        return 0;
+    /* Orphaned second half of surrogate pair? */
+    else if ((cp >= 0xDC00) && (cp <= 0xDFFF))
+        cp = UNICODE_BOGUS_CHAR_CODEPOINT;
+    else if ((cp >= 0xD800) && (cp <= 0xDBFF))  /* start surrogate pair! */
+    {
+        const PHYSFS_uint32 pair = (PHYSFS_uint32) *src;
+        if (pair == 0)
+            cp = UNICODE_BOGUS_CHAR_CODEPOINT;
+        else if ((pair < 0xDC00) || (pair > 0xDFFF))
+            cp = UNICODE_BOGUS_CHAR_CODEPOINT;
+        else
+        {
+            src++;  /* eat the other surrogate. */
+            cp = (((cp - 0xD800) << 10) | (pair - 0xDC00));
+        } /* else */
+    } /* else if */
+
+    *_str = src;
+    return cp;
+} /* utf16codepoint */
+
+static PHYSFS_uint32 utf32codepoint(const PHYSFS_uint32 **_str)
+{
+    const PHYSFS_uint32 *src = *_str;
+    PHYSFS_uint32 cp = *(src++);
+
+    if (cp == 0)  /* null terminator, end of string. */
+        return 0;
+    else if (cp > 0x10FFF)
+        cp = UNICODE_BOGUS_CHAR_CODEPOINT;
+
+    *_str = src;
+    return cp;
+} /* utf32codepoint */
 
 
 void PHYSFS_utf8ToUcs4(const char *src, PHYSFS_uint32 *dst, PHYSFS_uint64 len)
@@ -376,25 +420,9 @@ void PHYSFS_utf8FromUtf16(const PHYSFS_uint16 *src, char *dst, PHYSFS_uint64 len
     len--;
     while (len)
     {
-        PHYSFS_uint32 cp = (PHYSFS_uint32) *(src++);
-        if (cp == 0)
+        const PHYSFS_uint32 cp = utf16codepoint(&src);
+        if (!cp)
             break;
-
-        /* Orphaned second half of surrogate pair? */
-        if ((cp >= 0xDC00) && (cp <= 0xDFFF))
-            cp = UNICODE_BOGUS_CHAR_CODEPOINT;
-        else if ((cp >= 0xD800) && (cp <= 0xDBFF))  /* start surrogate pair! */
-        {
-            const PHYSFS_uint32 pair = (PHYSFS_uint32) *src;
-            if ((pair < 0xDC00) || (pair > 0xDFFF))
-                cp = UNICODE_BOGUS_CHAR_CODEPOINT;
-            else
-            {
-                src++;  /* eat the other surrogate. */
-                cp = (((cp - 0xD800) << 10) | (pair - 0xDC00));
-            } /* else */
-        } /* else if */
-
         utf8fromcodepoint(cp, &dst, &len);
     } /* while */
 
@@ -402,149 +430,138 @@ void PHYSFS_utf8FromUtf16(const PHYSFS_uint16 *src, char *dst, PHYSFS_uint64 len
 } /* PHYSFS_utf8FromUtf16 */
 
 
-typedef struct CaseFoldMapping
+int PHYSFS_caseFold(const PHYSFS_uint32 from, PHYSFS_uint32 *to)
 {
-    PHYSFS_uint32 from;
-    PHYSFS_uint32 to0;
-    PHYSFS_uint32 to1;
-    PHYSFS_uint32 to2;
-} CaseFoldMapping;
+    int i;
 
-typedef struct CaseFoldHashBucket
-{
-    const PHYSFS_uint8 count;
-    const CaseFoldMapping *list;
-} CaseFoldHashBucket;
-
-#include "physfs_casefolding.h"
-
-static void locate_case_fold_mapping(const PHYSFS_uint32 from,
-                                     PHYSFS_uint32 *to)
-{
-    PHYSFS_uint32 i;
-    const PHYSFS_uint8 hashed = ((from ^ (from >> 8)) & 0xFF);
-    const CaseFoldHashBucket *bucket = &case_fold_hash[hashed];
-    const CaseFoldMapping *mapping = bucket->list;
-
-    for (i = 0; i < bucket->count; i++, mapping++)
+    if (from < 128)  /* low-ASCII, easy! */
     {
-        if (mapping->from == from)
+        if ((from >= 'A') && (from <= 'Z'))
+            *to = from - ('A' - 'a');
+        else
+            *to = from;
+        return 1;
+    } /* if */
+
+    else if (from <= 0xFFFF)
+    {
+        const PHYSFS_uint8 hash = ((from ^ (from >> 8)) & 0xFF);
+        const PHYSFS_uint16 from16 = (PHYSFS_uint16) from;
+
         {
-            to[0] = mapping->to0;
-            to[1] = mapping->to1;
-            to[2] = mapping->to2;
-            return;
-        } /* if */
-    } /* for */
+            const CaseFoldHashBucket1_16 *bucket = &case_fold_hash1_16[hash];
+            const int count = (int) bucket->count;
+            for (i = 0; i < count; i++)
+            {
+                const CaseFoldMapping1_16 *mapping = &bucket->list[i];
+                if (mapping->from == from16)
+                {
+                    *to = mapping->to0;
+                    return 1;
+                } /* if */
+            } /* for */
+        }
+
+        {
+            const CaseFoldHashBucket2_16 *bucket = &case_fold_hash2_16[hash & 15];
+            const int count = (int) bucket->count;
+            for (i = 0; i < count; i++)
+            {
+                const CaseFoldMapping2_16 *mapping = &bucket->list[i];
+                if (mapping->from == from16)
+                {
+                    to[0] = mapping->to0;
+                    to[1] = mapping->to1;
+                    return 2;
+                } /* if */
+            } /* for */
+        }
+
+        {
+            const CaseFoldHashBucket3_16 *bucket = &case_fold_hash3_16[hash & 3];
+            const int count = (int) bucket->count;
+            for (i = 0; i < count; i++)
+            {
+                const CaseFoldMapping3_16 *mapping = &bucket->list[i];
+                if (mapping->from == from16)
+                {
+                    to[0] = mapping->to0;
+                    to[1] = mapping->to1;
+                    to[2] = mapping->to2;
+                    return 3;
+                } /* if */
+            } /* for */
+        }
+    } /* else if */
+
+    else  /* codepoint that doesn't fit in 16 bits. */
+    {
+        const PHYSFS_uint8 hash = ((from ^ (from >> 8)) & 0xFF);
+        const CaseFoldHashBucket1_32 *bucket = &case_fold_hash1_32[hash & 15];
+        const int count = (int) bucket->count;
+        for (i = 0; i < count; i++)
+        {
+            const CaseFoldMapping1_32 *mapping = &bucket->list[i];
+            if (mapping->from == from)
+            {
+                *to = mapping->to0;
+                return 1;
+            } /* if */
+        } /* for */
+    } /* else */
+
 
     /* Not found...there's no remapping for this codepoint. */
-    to[0] = from;
-    to[1] = 0;
-    to[2] = 0;
-} /* locate_case_fold_mapping */
+    *to = from;
+    return 1;
+} /* PHYSFS_caseFold */
 
 
-static int utf8codepointcmp(const PHYSFS_uint32 cp1, const PHYSFS_uint32 cp2)
+#define UTFSTRICMP(bits) \
+    PHYSFS_uint32 folded1[3], folded2[3]; \
+    int head1 = 0, tail1 = 0, head2 = 0, tail2 = 0; \
+    while (1) { \
+        PHYSFS_uint32 cp1, cp2; \
+        if (head1 != tail1) { \
+            cp1 = folded1[tail1++]; \
+        } else { \
+            head1 = PHYSFS_caseFold(utf##bits##codepoint(&str1), folded1); \
+            cp1 = folded1[0]; \
+            tail1 = 1; \
+        } \
+        if (head2 != tail2) { \
+            cp2 = folded2[tail2++]; \
+        } else { \
+            head2 = PHYSFS_caseFold(utf##bits##codepoint(&str2), folded2); \
+            cp2 = folded2[0]; \
+            tail2 = 1; \
+        } \
+        if (cp1 < cp2) { \
+            return -1; \
+        } else if (cp1 > cp2) { \
+            return 1; \
+        } else if (cp1 == 0) { \
+            break;  /* complete match. */ \
+        } \
+    } \
+    return 0
+
+int PHYSFS_utf8stricmp(const char *str1, const char *str2)
 {
-    PHYSFS_uint32 folded1[3], folded2[3];
+    UTFSTRICMP(8);
+} /* PHYSFS_utf8stricmp */
 
-    if (cp1 == cp2)
-        return 0;  /* obviously matches. */
-
-    locate_case_fold_mapping(cp1, folded1);
-    locate_case_fold_mapping(cp2, folded2);
-
-    if (folded1[0] < folded2[0])
-        return -1;
-    else if (folded1[0] > folded2[0])
-        return 1;
-    else if (folded1[1] < folded2[1])
-        return -1;
-    else if (folded1[1] > folded2[1])
-        return 1;
-    else if (folded1[2] < folded2[2])
-        return -1;
-    else if (folded1[2] > folded2[2])
-        return 1;
-
-    return 0;  /* complete match. */
-} /* utf8codepointcmp */
-
-
-int __PHYSFS_utf8stricmp(const char *str1, const char *str2)
+int PHYSFS_utf16stricmp(const PHYSFS_uint16 *str1, const PHYSFS_uint16 *str2)
 {
-    while (1)
-    {
-        const PHYSFS_uint32 cp1 = utf8codepoint(&str1);
-        const PHYSFS_uint32 cp2 = utf8codepoint(&str2);
-        const int rc = utf8codepointcmp(cp1, cp2);
-        if (rc != 0)
-            return rc;
-        else if (cp1 == 0)
-            break;  /* complete match. */
-    } /* while */
+    UTFSTRICMP(16);
+} /* PHYSFS_utf16stricmp */
 
-    return 0;
-} /* __PHYSFS_utf8stricmp */
-
-
-int __PHYSFS_utf8strnicmp(const char *str1, const char *str2, PHYSFS_uint32 n)
+int PHYSFS_ucs4stricmp(const PHYSFS_uint32 *str1, const PHYSFS_uint32 *str2)
 {
-    while (n > 0)
-    {
-        const PHYSFS_uint32 cp1 = utf8codepoint(&str1);
-        const PHYSFS_uint32 cp2 = utf8codepoint(&str2);
-        const int rc = utf8codepointcmp(cp1, cp2);
-        if (rc != 0)
-            return rc;
-        else if (cp1 == 0)
-            return 0;
-        n--;
-    } /* while */
+    UTFSTRICMP(32);
+} /* PHYSFS_ucs4stricmp */
 
-    return 0;  /* matched to n chars. */
-} /* __PHYSFS_utf8strnicmp */
-
-
-int __PHYSFS_stricmpASCII(const char *str1, const char *str2)
-{
-    while (1)
-    {
-        const char ch1 = *(str1++);
-        const char ch2 = *(str2++);
-        const char cp1 = ((ch1 >= 'A') && (ch1 <= 'Z')) ? (ch1+32) : ch1;
-        const char cp2 = ((ch2 >= 'A') && (ch2 <= 'Z')) ? (ch2+32) : ch2;
-        if (cp1 < cp2)
-            return -1;
-        else if (cp1 > cp2)
-            return 1;
-        else if (cp1 == 0)  /* they're both null chars? */
-            break;
-    } /* while */
-
-    return 0;
-} /* __PHYSFS_stricmpASCII */
-
-
-int __PHYSFS_strnicmpASCII(const char *str1, const char *str2, PHYSFS_uint32 n)
-{
-    while (n-- > 0)
-    {
-        const char ch1 = *(str1++);
-        const char ch2 = *(str2++);
-        const char cp1 = ((ch1 >= 'A') && (ch1 <= 'Z')) ? (ch1+32) : ch1;
-        const char cp2 = ((ch2 >= 'A') && (ch2 <= 'Z')) ? (ch2+32) : ch2;
-        if (cp1 < cp2)
-            return -1;
-        else if (cp1 > cp2)
-            return 1;
-        else if (cp1 == 0)  /* they're both null chars? */
-            return 0;
-    } /* while */
-
-    return 0;
-} /* __PHYSFS_strnicmpASCII */
-
+#undef UTFSTRICMP
 
 /* end of physfs_unicode.c ... */
 

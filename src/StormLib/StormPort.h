@@ -192,6 +192,14 @@
   #define off64_t off_t
   #define O_LARGEFILE 0
 #endif
+
+#if defined(PLATFORM_LINUX) && defined(__ANDROID__)
+  #define stat64  stat
+  #define fstat64 fstat
+  #define lseek64 lseek
+  #define ftruncate64 ftruncate
+  #define off64_t off_t
+#endif
                                                 
 // Platform-specific error codes for UNIX-based platforms
 #if defined(PLATFORM_MAC) || defined(PLATFORM_LINUX)

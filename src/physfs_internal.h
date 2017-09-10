@@ -14,6 +14,11 @@
 #error Do not include this header from your applications.
 #endif
 
+/* Turn off MSVC warnings that are aggressively anti-portability. */
+#if defined(_MSC_VER) && !defined(_CRT_SECURE_NO_WARNINGS)
+#define _CRT_SECURE_NO_WARNINGS 1
+#endif
+
 #include "physfs.h"
 
 /* The holy trinity. */
@@ -25,12 +30,15 @@
 
 #include <assert.h>
 
+#define __PHYSFS_COMPILE_TIME_ASSERT(name, x) \
+       typedef int __PHYSFS_compile_time_assert_##name[(x) * 2 - 1]
+
 /* !!! FIXME: remove this when revamping stack allocation code... */
-#if defined(_MSC_VER) || defined(__MINGW32__)
+#if defined(_MSC_VER) || defined(__MINGW32__) || defined(__WATCOMC__)
 #include <malloc.h>
 #endif
 
-#if PHYSFS_PLATFORM_SOLARIS
+#ifdef PHYSFS_PLATFORM_SOLARIS
 #include <alloca.h>
 #endif
 
@@ -53,14 +61,73 @@ extern "C" {
 #   define inline __inline
 #endif
 
-#if PHYSFS_PLATFORM_LINUX && !defined(_FILE_OFFSET_BITS)
+#if defined(PHYSFS_PLATFORM_LINUX) && !defined(_FILE_OFFSET_BITS)
 #define _FILE_OFFSET_BITS 64
 #endif
+
+/* All public APIs need to be in physfs.h with a PHYSFS_DECL.
+   All file-private symbols need to be marked "static".
+   Everything shared between PhysicsFS sources needs to be in this
+   file between the visibility pragma blocks. */
+#if PHYSFS_MINIMUM_GCC_VERSION(4,0) || defined(__clang__)
+#define PHYSFS_HAVE_PRAGMA_VISIBILITY 1
+#endif
+
+#if PHYSFS_HAVE_PRAGMA_VISIBILITY
+#pragma GCC visibility push(hidden)
+#endif
+
+/* These are the build-in archivers. We list them all as "extern" here without
+   #ifdefs to keep it tidy, but obviously you need to make sure these are
+   wrapped in PHYSFS_SUPPORTS_* checks before actually referencing them. */
+extern const PHYSFS_Archiver __PHYSFS_Archiver_DIR;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_ZIP;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_7Z;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_GRP;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_QPAK;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_HOG;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_MPQ;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_MVL;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_WAD;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_SLB;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_ISO9660;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_VDF;
+
+/* a real C99-compliant snprintf() is in Visual Studio 2015,
+   but just use this everywhere for binary compatibility. */
+#if defined(_MSC_VER)
+int __PHYSFS_msvc_vsnprintf(char *outBuf, size_t size, const char *format, va_list ap);
+int __PHYSFS_msvc_snprintf(char *outBuf, size_t size, const char *format, ...);
+#define vsnprintf __PHYSFS_msvc_vsnprintf
+#define snprintf __PHYSFS_msvc_snprintf
+#endif
+
+/* Some simple wrappers around WinRT C++ interfaces we can call from C. */
+#ifdef PHYSFS_PLATFORM_WINRT
+const void *__PHYSFS_winrtCalcBaseDir(void);
+const void *__PHYSFS_winrtCalcPrefDir(void);
+#endif
+
+/* atomic operations. */
+#if defined(_MSC_VER) && (_MSC_VER >= 1500)
+#include <intrin.h>
+__PHYSFS_COMPILE_TIME_ASSERT(LongEqualsInt, sizeof (int) == sizeof (long));
+#define __PHYSFS_ATOMIC_INCR(ptrval) _InterlockedIncrement((long*)(ptrval))
+#define __PHYSFS_ATOMIC_DECR(ptrval) _InterlockedDecrement((long*)(ptrval))
+#elif defined(__clang__) || (defined(__GNUC__) && (((__GNUC__ * 10000) + (__GNUC_MINOR__ * 100)) >= 40100))
+#define __PHYSFS_ATOMIC_INCR(ptrval) __sync_fetch_and_add(ptrval, 1)
+#define __PHYSFS_ATOMIC_DECR(ptrval) __sync_fetch_and_add(ptrval, -1)
+#else
+#define PHYSFS_NEED_ATOMIC_OP_FALLBACK 1
+int __PHYSFS_ATOMIC_INCR(int *ptrval);
+int __PHYSFS_ATOMIC_DECR(int *ptrval);
+#endif
+
 
 /*
  * Interface for small allocations. If you need a little scratch space for
  *  a throwaway buffer or string, use this. It will make small allocations
- *  on the stack if possible, and use allocator.Malloc() if they are too
+ *  on the stack if possible, and use physfs_alloc.Malloc() if they are too
  *  large. This helps reduce malloc pressure.
  * There are some rules, though:
  * NEVER return a pointer from this, as stack-allocated buffers go away
@@ -79,7 +146,7 @@ extern "C" {
  * NEVER forget to check for NULL...allocation can fail here, of course!
  */
 #define __PHYSFS_SMALLALLOCTHRESHOLD 256
-void *__PHYSFS_initSmallAlloc(void *ptr, PHYSFS_uint64 len);
+void *__PHYSFS_initSmallAlloc(void *ptr, const size_t len);
 
 #define __PHYSFS_smallAlloc(bytes) ( \
     __PHYSFS_initSmallAlloc( \
@@ -100,28 +167,36 @@ void __PHYSFS_smallFree(void *ptr);
 #define PHYSFS_SUPPORTS_ZIP 1
 #endif
 #ifndef PHYSFS_SUPPORTS_7Z
-#define PHYSFS_SUPPORTS_7Z 0
+#define PHYSFS_SUPPORTS_7Z 1
 #endif
 #ifndef PHYSFS_SUPPORTS_GRP
-#define PHYSFS_SUPPORTS_GRP 0
+#define PHYSFS_SUPPORTS_GRP 1
 #endif
 #ifndef PHYSFS_SUPPORTS_HOG
-#define PHYSFS_SUPPORTS_HOG 0
-#endif
-#ifndef PHYSFS_SUPPORTS_MPQ
-#define PHYSFS_SUPPORTS_MPQ 0
+#define PHYSFS_SUPPORTS_HOG 1
 #endif
 #ifndef PHYSFS_SUPPORTS_MVL
-#define PHYSFS_SUPPORTS_MVL 0
+#define PHYSFS_SUPPORTS_MVL 1
 #endif
 #ifndef PHYSFS_SUPPORTS_WAD
-#define PHYSFS_SUPPORTS_WAD 0
+#define PHYSFS_SUPPORTS_WAD 1
+#endif
+#ifndef PHYSFS_SUPPORTS_QPAK
+#define PHYSFS_SUPPORTS_QPAK 1
 #endif
 #ifndef PHYSFS_SUPPORTS_SLB
-#define PHYSFS_SUPPORTS_SLB 0
+#define PHYSFS_SUPPORTS_SLB 1
 #endif
 #ifndef PHYSFS_SUPPORTS_ISO9660
-#define PHYSFS_SUPPORTS_ISO9660 0
+#define PHYSFS_SUPPORTS_ISO9660 1
+#endif
+#ifndef PHYSFS_SUPPORTS_VDF
+#define PHYSFS_SUPPORTS_VDF 1
+#endif
+
+#if PHYSFS_SUPPORTS_7Z
+/* 7zip support needs a global init function called at startup (no deinit). */
+extern void SZIP_global_init(void);
 #endif
 
 /* The latest supported PHYSFS_Io::version value. */
@@ -172,21 +247,25 @@ void __PHYSFS_sort(void *entries, size_t max,
                    int (*cmpfn)(void *, size_t, size_t),
                    void (*swapfn)(void *, size_t, size_t));
 
-/*
- * This isn't a formal error code, it's just for BAIL_MACRO.
- *  It means: there was an error, but someone else already set it for us.
- */
-#define ERRPASS PHYSFS_ERR_OK
-
 /* These get used all over for lessening code clutter. */
-#define BAIL_MACRO(e, r) do { if (e) PHYSFS_setErrorCode(e); return r; } while (0)
-#define BAIL_IF_MACRO(c, e, r) do { if (c) { if (e) PHYSFS_setErrorCode(e); return r; } } while (0)
-#define BAIL_MACRO_MUTEX(e, m, r) do { if (e) PHYSFS_setErrorCode(e); __PHYSFS_platformReleaseMutex(m); return r; } while (0)
-#define BAIL_IF_MACRO_MUTEX(c, e, m, r) do { if (c) { if (e) PHYSFS_setErrorCode(e); __PHYSFS_platformReleaseMutex(m); return r; } } while (0)
-#define GOTO_MACRO(e, g) do { if (e) PHYSFS_setErrorCode(e); goto g; } while (0)
-#define GOTO_IF_MACRO(c, e, g) do { if (c) { if (e) PHYSFS_setErrorCode(e); goto g; } } while (0)
-#define GOTO_MACRO_MUTEX(e, m, g) do { if (e) PHYSFS_setErrorCode(e); __PHYSFS_platformReleaseMutex(m); goto g; } while (0)
-#define GOTO_IF_MACRO_MUTEX(c, e, m, g) do { if (c) { if (e) PHYSFS_setErrorCode(e); __PHYSFS_platformReleaseMutex(m); goto g; } } while (0)
+/* "ERRPASS" means "something else just set the error state for us" and is
+    just to make it clear where the responsibility for the error state lays. */
+#define BAIL(e, r) do { if (e) PHYSFS_setErrorCode(e); return r; } while (0)
+#define BAIL_ERRPASS(r) do { return r; } while (0)
+#define BAIL_IF(c, e, r) do { if (c) { if (e) PHYSFS_setErrorCode(e); return r; } } while (0)
+#define BAIL_IF_ERRPASS(c, r) do { if (c) { return r; } } while (0)
+#define BAIL_MUTEX(e, m, r) do { if (e) PHYSFS_setErrorCode(e); __PHYSFS_platformReleaseMutex(m); return r; } while (0)
+#define BAIL_MUTEX_ERRPASS(m, r) do { __PHYSFS_platformReleaseMutex(m); return r; } while (0)
+#define BAIL_IF_MUTEX(c, e, m, r) do { if (c) { if (e) PHYSFS_setErrorCode(e); __PHYSFS_platformReleaseMutex(m); return r; } } while (0)
+#define BAIL_IF_MUTEX_ERRPASS(c, m, r) do { if (c) { __PHYSFS_platformReleaseMutex(m); return r; } } while (0)
+#define GOTO(e, g) do { if (e) PHYSFS_setErrorCode(e); goto g; } while (0)
+#define GOTO_ERRPASS(g) do { goto g; } while (0)
+#define GOTO_IF(c, e, g) do { if (c) { if (e) PHYSFS_setErrorCode(e); goto g; } } while (0)
+#define GOTO_IF_ERRPASS(c, g) do { if (c) { goto g; } } while (0)
+#define GOTO_MUTEX(e, m, g) do { if (e) PHYSFS_setErrorCode(e); __PHYSFS_platformReleaseMutex(m); goto g; } while (0)
+#define GOTO_MUTEX_ERRPASS(m, g) do { __PHYSFS_platformReleaseMutex(m); goto g; } while (0)
+#define GOTO_IF_MUTEX(c, e, m, g) do { if (c) { if (e) PHYSFS_setErrorCode(e); __PHYSFS_platformReleaseMutex(m); goto g; } } while (0)
+#define GOTO_IF_MUTEX_ERRPASS(c, m, g) do { if (c) { __PHYSFS_platformReleaseMutex(m); goto g; } } while (0)
 
 #define __PHYSFS_ARRAYLEN(x) ( (sizeof (x)) / (sizeof (x[0])) )
 
@@ -217,39 +296,6 @@ void __PHYSFS_sort(void *entries, size_t max,
     ((s) < (__PHYSFS_UI64(0xFFFFFFFFFFFFFFFF) >> (64-(sizeof(size_t)*8)))) \
 )
 
-
-/*
- * This is a strcasecmp() or stricmp() replacement that expects both strings
- *  to be in UTF-8 encoding. It will do "case folding" to decide if the
- *  Unicode codepoints in the strings match.
- *
- * It will report which string is "greater than" the other, but be aware that
- *  this doesn't necessarily mean anything: 'a' may be "less than" 'b', but
- *  a random Kanji codepoint has no meaningful alphabetically relationship to
- *  a Greek Lambda, but being able to assign a reliable "value" makes sorting
- *  algorithms possible, if not entirely sane. Most cases should treat the
- *  return value as "equal" or "not equal".
- */
-int __PHYSFS_utf8stricmp(const char *s1, const char *s2);
-
-/*
- * This works like __PHYSFS_utf8stricmp(), but takes a character (NOT BYTE
- *  COUNT) argument, like strcasencmp().
- */
-int __PHYSFS_utf8strnicmp(const char *s1, const char *s2, PHYSFS_uint32 l);
-
-/*
- * stricmp() that guarantees to only work with low ASCII. The C runtime
- *  stricmp() might try to apply a locale/codepage/etc, which we don't want.
- */
-int __PHYSFS_stricmpASCII(const char *s1, const char *s2);
-
-/*
- * strnicmp() that guarantees to only work with low ASCII. The C runtime
- *  strnicmp() might try to apply a locale/codepage/etc, which we don't want.
- */
-int __PHYSFS_strnicmpASCII(const char *s1, const char *s2, PHYSFS_uint32 l);
-
 /*
  * Like strdup(), but uses the current PhysicsFS allocator.
  */
@@ -264,10 +310,10 @@ PHYSFS_uint32 __PHYSFS_hashString(const char *str, size_t len);
 /*
  * The current allocator. Not valid before PHYSFS_init is called!
  */
-extern PHYSFS_Allocator __PHYSFS_AllocatorHooksz;
+extern PHYSFS_Allocator __PHYSFS_AllocatorHooks;
 
 /* convenience macro to make this less cumbersome internally... */
-#define physfs_alloc __PHYSFS_AllocatorHooksz
+#define physfs_alloc __PHYSFS_AllocatorHooks
 
 /*
  * Create a PHYSFS_Io for a file in the physical filesystem.
@@ -289,29 +335,56 @@ PHYSFS_Io *__PHYSFS_createMemoryIo(const void *buf, PHYSFS_uint64 len,
  * Read (len) bytes from (io) into (buf). Returns non-zero on success,
  *  zero on i/o error. Literally: "return (io->read(io, buf, len) == len);"
  */
-int __PHYSFS_readAll(PHYSFS_Io *io, void *buf, const PHYSFS_uint64 len);
+int __PHYSFS_readAll(PHYSFS_Io *io, void *buf, const size_t len);
 
 
 /* These are shared between some archivers. */
 
-typedef struct
-{
-    char name[64];
-    PHYSFS_uint32 startPos;
-    PHYSFS_uint32 size;
-} UNPKentry;
-
+void UNPK_abandonArchive(void *opaque);
 void UNPK_closeArchive(void *opaque);
-void *UNPK_openArchive(PHYSFS_Io *io,UNPKentry *e,const PHYSFS_uint32 n);
-void UNPK_enumerateFiles(void *opaque, const char *dname,
-                         PHYSFS_EnumFilesCallback cb,
-                         const char *origdir, void *callbackdata);
+void *UNPK_openArchive(PHYSFS_Io *io);
+void *UNPK_addEntry(void *opaque, char *name, const int isdir,
+                    const PHYSFS_sint64 ctime, const PHYSFS_sint64 mtime,
+                    const PHYSFS_uint64 pos, const PHYSFS_uint64 len);
 PHYSFS_Io *UNPK_openRead(void *opaque, const char *name);
 PHYSFS_Io *UNPK_openWrite(void *opaque, const char *name);
 PHYSFS_Io *UNPK_openAppend(void *opaque, const char *name);
 int UNPK_remove(void *opaque, const char *name);
 int UNPK_mkdir(void *opaque, const char *name);
 int UNPK_stat(void *opaque, const char *fn, PHYSFS_Stat *st);
+#define UNPK_enumerate __PHYSFS_DirTreeEnumerate
+
+
+
+/* Optional API many archivers use this to manage their directory tree. */
+/* !!! FIXME: document this better. */
+
+typedef struct __PHYSFS_DirTreeEntry
+{
+    char *name;                              /* Full path in archive.        */
+    struct __PHYSFS_DirTreeEntry *hashnext;  /* next item in hash bucket.    */
+    struct __PHYSFS_DirTreeEntry *children;  /* linked list of kids, if dir. */
+    struct __PHYSFS_DirTreeEntry *sibling;   /* next item in same dir.       */
+    int isdir;
+} __PHYSFS_DirTreeEntry;
+
+typedef struct __PHYSFS_DirTree
+{
+    __PHYSFS_DirTreeEntry *root;    /* root of directory tree.             */
+    __PHYSFS_DirTreeEntry **hash;  /* all entries hashed for fast lookup. */
+    size_t hashBuckets;            /* number of buckets in hash.          */
+    size_t entrylen;    /* size in bytes of entries (including subclass). */
+} __PHYSFS_DirTree;
+
+
+int __PHYSFS_DirTreeInit(__PHYSFS_DirTree *dt, const size_t entrylen);
+void *__PHYSFS_DirTreeAdd(__PHYSFS_DirTree *dt, char *name, const int isdir);
+void *__PHYSFS_DirTreeFind(__PHYSFS_DirTree *dt, const char *path);
+PHYSFS_EnumerateCallbackResult __PHYSFS_DirTreeEnumerate(void *opaque,
+                              const char *dname, PHYSFS_EnumerateCallback cb,
+                              const char *origdir, void *callbackdata);
+void __PHYSFS_DirTreeDeinit(__PHYSFS_DirTree *dt);
+
 
 
 /*--------------------------------------------------------------------------*/
@@ -330,9 +403,10 @@ int UNPK_stat(void *opaque, const char *fn, PHYSFS_Stat *st);
  *  Obviously, this isn't a function. If you need more than one char for this,
  *  you'll need to pull some old pieces of PhysicsFS out of revision control.
  */
-#if PHYSFS_PLATFORM_WINDOWS
+#if defined(PHYSFS_PLATFORM_WINDOWS) || defined(PHYSFS_PLATFORM_OS2)
 #define __PHYSFS_platformDirSeparator '\\'
 #else
+#define __PHYSFS_STANDARD_DIRSEP 1
 #define __PHYSFS_platformDirSeparator '/'
 #endif
 
@@ -350,11 +424,8 @@ int __PHYSFS_platformInit(void);
  * Deinitialize the platform. This is called when PHYSFS_deinit() is called
  *  from the application. You can use this to clean up anything you've
  *  allocated in your platform driver.
- *
- * Return zero if there was a catastrophic failure (which prevents you from
- *  functioning at all), and non-zero otherwise.
  */
-int __PHYSFS_platformDeinit(void);
+void __PHYSFS_platformDeinit(void);
 
 
 /*
@@ -475,7 +546,13 @@ PHYSFS_sint64 __PHYSFS_platformFileLength(void *handle);
 
 
 /*
- * !!! FIXME: comment me.
+ * Read filesystem metadata for a specific path.
+ *
+ * This needs to fill in all the fields of (stat). For fields that might not
+ *  mean anything on a platform (access time, perhaps), choose a reasonable
+ *  default.
+ *
+ *  Return zero on failure, non-zero on success.
  */
 int __PHYSFS_platformStat(const char *fn, PHYSFS_Stat *stat);
 
@@ -512,7 +589,7 @@ void __PHYSFS_platformDetectAvailableCDs(PHYSFS_StringCallback cb, void *data);
  *  Just return NULL if the standard routines will suffice. (see
  *  calculateBaseDir() in physfs.c ...)
  * Your string must end with a dir separator if you don't return NULL.
- *  Caller will allocator.Free() the retval if it's not NULL.
+ *  Caller will physfs_alloc.Free() the retval if it's not NULL.
  */
 char *__PHYSFS_platformCalcBaseDir(const char *argv0);
 
@@ -520,7 +597,7 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0);
  * Get the platform-specific user dir.
  * As of PhysicsFS 2.1, returning NULL means fatal error.
  * Your string must end with a dir separator if you don't return NULL.
- *  Caller will allocator.Free() the retval if it's not NULL.
+ *  Caller will physfs_alloc.Free() the retval if it's not NULL.
  */
 char *__PHYSFS_platformCalcUserDir(void);
 
@@ -533,7 +610,7 @@ const char *__PHYSFS_getUserDir(void);  /* not deprecated internal version. */
  * Get the platform-specific pref dir.
  * Returning NULL means fatal error.
  * Your string must end with a dir separator if you don't return NULL.
- *  Caller will allocator.Free() the retval if it's not NULL.
+ *  Caller will physfs_alloc.Free() the retval if it's not NULL.
  *  Caller will make missing directories if necessary; this just reports
  *   the final path.
  */
@@ -551,16 +628,15 @@ void *__PHYSFS_platformGetThreadID(void);
 
 /*
  * Enumerate a directory of files. This follows the rules for the
- *  PHYSFS_Archiver::enumerateFiles() method, except that the
- *  (dirName) that is passed to this function is converted to
- *  platform-DEPENDENT notation by the caller. The PHYSFS_Archiver version
- *  uses platform-independent notation. Note that ".", "..", and other
- *  meta-entries should always be ignored.
+ *  PHYSFS_Archiver::enumerate() method, except that the (dirName) that is
+ *  passed to this function is converted to platform-DEPENDENT notation by
+ *  the caller. The PHYSFS_Archiver version uses platform-independent
+ *  notation. Note that ".", "..", and other meta-entries should always
+ *  be ignored.
  */
-void __PHYSFS_platformEnumerateFiles(const char *dirname,
-                                     PHYSFS_EnumFilesCallback callback,
-                                     const char *origdir,
-                                     void *callbackdata);
+PHYSFS_EnumerateCallbackResult __PHYSFS_platformEnumerate(const char *dirname,
+                               PHYSFS_EnumerateCallback callback,
+                               const char *origdir, void *callbackdata);
 
 /*
  * Make a directory in the actual filesystem. (path) is specified in
@@ -630,19 +706,9 @@ int __PHYSFS_platformGrabMutex(void *mutex);
  */
 void __PHYSFS_platformReleaseMutex(void *mutex);
 
-/*
- * Called at the start of PHYSFS_init() to prepare the allocator, if the user
- *  hasn't selected their own allocator via PHYSFS_setAllocator().
- *  If the platform has a custom allocator, it should fill in the fields of
- *  (a) with the proper function pointers and return non-zero.
- * If the platform just wants to use malloc()/free()/etc, return zero
- *  immediately and the higher level will handle it. The Init and Deinit
- *  fields of (a) are optional...set them to NULL if you don't need them.
- *  Everything else must be implemented. All rules follow those for
- *  PHYSFS_setAllocator(). If Init isn't NULL, it will be called shortly
- *  after this function returns non-zero.
- */
-int __PHYSFS_platformSetDefaultAllocator(PHYSFS_Allocator *a);
+#if PHYSFS_HAVE_PRAGMA_VISIBILITY
+#pragma GCC visibility pop
+#endif
 
 #ifdef __cplusplus
 }

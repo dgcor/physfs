@@ -122,16 +122,17 @@
  *  game...keeping external content on a tight leash in this manner can be of
  *  utmost importance to some applications.
  *
- * PhysicsFS is mostly thread safe. The error messages returned by
- *  PHYSFS_getLastError() are unique by thread, and library-state-setting
+ * PhysicsFS is mostly thread safe. The errors returned by
+ *  PHYSFS_getLastErrorCode() are unique by thread, and library-state-setting
  *  functions are mutex'd. For efficiency, individual file accesses are 
  *  not locked, so you can not safely read/write/seek/close/etc the same 
  *  file from two threads at the same time. Other race conditions are bugs 
  *  that should be reported/patched.
  *
  * While you CAN use stdio/syscall file access in a program that has PHYSFS_*
- *  calls, doing so is not recommended, and you can not use system
- *  filehandles with PhysicsFS and vice versa.
+ *  calls, doing so is not recommended, and you can not directly use system
+ *  filehandles with PhysicsFS and vice versa (but as of PhysicsFS 2.1, you
+ *  can wrap them in a PHYSFS_Io interface yourself if you wanted to).
  *
  * Note that archives need not be named as such: if you have a ZIP file and
  *  rename it with a .PKG extension, the file will still be recognized as a
@@ -147,6 +148,7 @@
  *   - .HOG (Descent I/II HOG file archives)
  *   - .MVL (Descent II movielib archives)
  *   - .WAD (DOOM engine archives)
+ *   - .VDF (Gothic I/II engine archives)
  *
  *
  * String policy for PhysicsFS 2.0 and later:
@@ -168,14 +170,14 @@
  *  should convert them to UTF-8 before handing them to PhysicsFS with
  *  PHYSFS_utf8FromUtf16(), which handles both UTF-16 and UCS-2. If you're
  *  using Unix or Mac OS X, your wchar_t strings are four bytes per character
- *  ("UCS-4 encoding"). Use PHYSFS_utf8FromUcs4(). Mac OS X can give you UTF-8
- *  directly from a CFString or NSString, and many Unixes generally give you C
- *  strings in UTF-8 format everywhere. If you have a single-byte high ASCII
- *  charset, like so-many European "codepages" you may be out of luck. We'll
- *  convert from "Latin1" to UTF-8 only, and never back to Latin1. If you're
- *  above ASCII 127, all bets are off: move to Unicode or use your platform's
- *  facilities. Passing a C string with high-ASCII data that isn't UTF-8
- *  encoded will NOT do what you expect!
+ *  ("UCS-4 encoding", sometimes called "UTF-32"). Use PHYSFS_utf8FromUcs4().
+ *  Mac OS X can give you UTF-8 directly from a CFString or NSString, and many
+ *  Unixes generally give you C strings in UTF-8 format everywhere. If you
+ *  have a single-byte high ASCII charset, like so-many European "codepages"
+ *  you may be out of luck. We'll convert from "Latin1" to UTF-8 only, and
+ *  never back to Latin1. If you're above ASCII 127, all bets are off: move
+ *  to Unicode or use your platform's facilities. Passing a C string with
+ *  high-ASCII data that isn't UTF-8 encoded will NOT do what you expect!
  *
  * Naturally, there's also PHYSFS_utf8ToUcs2(), PHYSFS_utf8ToUtf16(), and
  *  PHYSFS_utf8ToUcs4() to get data back into a format you like. Behind the
@@ -186,11 +188,11 @@
  * PhysicsFS offers basic encoding conversion support, but not a whole string
  *  library. Get your stuff into whatever format you can work with.
  *
- * All platforms supported by PhysicsFS 2.1 and later fully support Unicode.
- *  We have dropped platforms that don't (OS/2, Mac OS 9, Windows 95, etc), as
- *  even an OS that's over a decade old should be expected to handle this well.
- *  If you absolutely must support one of these platforms, you should use an
- *  older release of PhysicsFS.
+ * Most platforms supported by PhysicsFS 2.1 and later fully support Unicode.
+ *  Some older platforms have been dropped (Windows 95, Mac OS 9). Some, like
+ *  OS/2, might be able to convert to a local codepage or will just fail to
+ *  open/create the file. Modern OSes (macOS, Linux, Windows, etc) should all
+ *  be fine.
  *
  * Many game-specific archivers are seriously unprepared for Unicode (the
  *  Descent HOG/MVL and Build Engine GRP archivers, for example, only offer a
@@ -223,8 +225,6 @@ extern "C" {
 
 #if defined(PHYSFS_DECL)
 /* do nothing. */
-#elif (defined SWIG)
-#define PHYSFS_DECL extern
 #elif (defined _MSC_VER)
 #define PHYSFS_DECL __declspec(dllexport)
 #elif (defined __SUNPRO_C)
@@ -237,8 +237,6 @@ extern "C" {
 
 #if defined(PHYSFS_DEPRECATED)
 /* do nothing. */
-#elif (defined SWIG)  /* ignore deprecated, since bindings use everything. */
-#define PHYSFS_DEPRECATED
 #elif (__GNUC__ >= 4)  /* technically, this arrived in gcc 3.1, but oh well. */
 #define PHYSFS_DEPRECATED __attribute__((deprecated))
 #else
@@ -250,6 +248,8 @@ extern "C" {
 /* do nothing. */
 #elif defined(__WIN32__) && !defined(__GNUC__)
 #define PHYSFS_CALL __cdecl
+#elif defined(__OS2__) || defined(OS2) /* should work across all compilers. */
+#define PHYSFS_CALL _System
 #else
 #define PHYSFS_CALL
 #endif
@@ -318,28 +318,26 @@ typedef signed long long      PHYSFS_sint64;
 #endif
 
 
-#ifndef SWIG
 #ifndef DOXYGEN_SHOULD_IGNORE_THIS
 /* Make sure the types really have the right sizes */
-#define PHYSFS_COMPILE_TIME_ASSERT(name, x)               \
-       typedef int PHYSFS_dummy_ ## name[(x) * 2 - 1]
+#define PHYSFS_COMPILE_TIME_ASSERT(name, x) \
+       typedef int PHYSFS_compile_time_assert_##name[(x) * 2 - 1]
 
-PHYSFS_COMPILE_TIME_ASSERT(uint8, sizeof(PHYSFS_uint8) == 1);
-PHYSFS_COMPILE_TIME_ASSERT(sint8, sizeof(PHYSFS_sint8) == 1);
-PHYSFS_COMPILE_TIME_ASSERT(uint16, sizeof(PHYSFS_uint16) == 2);
-PHYSFS_COMPILE_TIME_ASSERT(sint16, sizeof(PHYSFS_sint16) == 2);
-PHYSFS_COMPILE_TIME_ASSERT(uint32, sizeof(PHYSFS_uint32) == 4);
-PHYSFS_COMPILE_TIME_ASSERT(sint32, sizeof(PHYSFS_sint32) == 4);
+PHYSFS_COMPILE_TIME_ASSERT(uint8IsOneByte, sizeof(PHYSFS_uint8) == 1);
+PHYSFS_COMPILE_TIME_ASSERT(sint8IsOneByte, sizeof(PHYSFS_sint8) == 1);
+PHYSFS_COMPILE_TIME_ASSERT(uint16IsTwoBytes, sizeof(PHYSFS_uint16) == 2);
+PHYSFS_COMPILE_TIME_ASSERT(sint16IsTwoBytes, sizeof(PHYSFS_sint16) == 2);
+PHYSFS_COMPILE_TIME_ASSERT(uint32IsFourBytes, sizeof(PHYSFS_uint32) == 4);
+PHYSFS_COMPILE_TIME_ASSERT(sint32IsFourBytes, sizeof(PHYSFS_sint32) == 4);
 
 #ifndef PHYSFS_NO_64BIT_SUPPORT
-PHYSFS_COMPILE_TIME_ASSERT(uint64, sizeof(PHYSFS_uint64) == 8);
-PHYSFS_COMPILE_TIME_ASSERT(sint64, sizeof(PHYSFS_sint64) == 8);
+PHYSFS_COMPILE_TIME_ASSERT(uint64IsEightBytes, sizeof(PHYSFS_uint64) == 8);
+PHYSFS_COMPILE_TIME_ASSERT(sint64IsEightBytes, sizeof(PHYSFS_sint64) == 8);
 #endif
 
 #undef PHYSFS_COMPILE_TIME_ASSERT
 
 #endif  /* DOXYGEN_SHOULD_IGNORE_THIS */
-#endif  /* SWIG */
 
 
 /**
@@ -433,12 +431,10 @@ typedef struct PHYSFS_Version
 } PHYSFS_Version;
 
 
-#ifndef SWIG  /* not available from scripting languages. */
-
 #ifndef DOXYGEN_SHOULD_IGNORE_THIS
 #define PHYSFS_VER_MAJOR 2
 #define PHYSFS_VER_MINOR 1
-#define PHYSFS_VER_PATCH 0
+#define PHYSFS_VER_PATCH 1
 #endif  /* DOXYGEN_SHOULD_IGNORE_THIS */
 
 
@@ -466,8 +462,6 @@ typedef struct PHYSFS_Version
     (x)->minor = PHYSFS_VER_MINOR; \
     (x)->patch = PHYSFS_VER_PATCH; \
 }
-
-#endif  /* SWIG */
 
 
 /**
@@ -611,6 +605,8 @@ PHYSFS_DECL void PHYSFS_freeList(void *listVar);
  * \fn const char *PHYSFS_getLastError(void)
  * \brief Get human-readable error information.
  *
+ * \deprecated Use PHYSFS_getLastErrorCode() and PHYSFS_getErrorByCode() instead.
+ *
  * \warning As of PhysicsFS 2.1, this function has been nerfed.
  *          Before PhysicsFS 2.1, this function was the only way to get
  *          error details beyond a given function's basic return value.
@@ -655,7 +651,7 @@ PHYSFS_DECL void PHYSFS_freeList(void *listVar);
  * \sa PHYSFS_getLastErrorCode
  * \sa PHYSFS_getErrorByCode
  */
-PHYSFS_DECL const char *PHYSFS_getLastError(void);
+PHYSFS_DECL const char *PHYSFS_getLastError(void) PHYSFS_DEPRECATED;
 
 
 /**
@@ -712,7 +708,6 @@ PHYSFS_DECL const char *PHYSFS_getDirSeparator(void);
 PHYSFS_DECL void PHYSFS_permitSymbolicLinks(int allow);
 
 
-/* !!! FIXME: const this? */
 /**
  * \fn char **PHYSFS_getCdRomDirs(void)
  * \brief Get an array of paths to available CD-ROM drives.
@@ -826,7 +821,7 @@ PHYSFS_DECL const char *PHYSFS_getWriteDir(void);
  *                   writing via PhysicsFS.
  *  \return non-zero on success, zero on failure. All attempts to open a file
  *           for writing via PhysicsFS will fail until this call succeeds.
- *           Specifics of the error can be gleaned from PHYSFS_getLastError().
+ *           Use PHYSFS_getLastErrorCode() to obtain the specific error.
  *
  * \sa PHYSFS_getWriteDir
  */
@@ -966,10 +961,10 @@ PHYSFS_DECL char **PHYSFS_getSearchPath(void);
  *                         yourself.
  *
  *    \param archivesFirst Non-zero to prepend the archives to the search path.
- *                          Zero to append them. Ignored if !(archiveExt).
+ *                         Zero to append them. Ignored if !(archiveExt).
  *
- *  \return nonzero on success, zero on error. Specifics of the error can be
- *          gleaned from PHYSFS_getLastError().
+ *  \return nonzero on success, zero on error. Use PHYSFS_getLastErrorCode()
+ *          to obtain the specific error.
  */
 PHYSFS_DECL int PHYSFS_setSaneConfig(const char *organization,
                                      const char *appName,
@@ -996,8 +991,8 @@ PHYSFS_DECL int PHYSFS_setSaneConfig(const char *organization,
  *  created directory behind and reports failure.
  *
  *   \param dirName New dir to create.
- *  \return nonzero on success, zero on error. Specifics of the error can be
- *          gleaned from PHYSFS_getLastError().
+ *  \return nonzero on success, zero on error. Use
+ *          PHYSFS_getLastErrorCode() to obtain the specific error.
  *
  * \sa PHYSFS_delete
  */
@@ -1031,8 +1026,8 @@ PHYSFS_DECL int PHYSFS_mkdir(const char *dirName);
  *  a security method or anything.  :)
  *
  *   \param filename Filename to delete.
- *  \return nonzero on success, zero on error. Specifics of the error can be
- *          gleaned from PHYSFS_getLastError().
+ *  \return nonzero on success, zero on error. Use PHYSFS_getLastErrorCode()
+ *          to obtain the specific error.
  */
 PHYSFS_DECL int PHYSFS_delete(const char *filename);
 
@@ -1074,6 +1069,17 @@ PHYSFS_DECL const char *PHYSFS_getRealDir(const char *filename);
  * \fn char **PHYSFS_enumerateFiles(const char *dir)
  * \brief Get a file listing of a search path's directory.
  *
+ * \warning In PhysicsFS versions prior to 2.1, this function would return
+ *          as many items as it could in the face of a failure condition
+ *          (out of memory, disk i/o error, etc). Since this meant apps
+ *          couldn't distinguish between complete success and partial failure,
+ *          and since the function could always return NULL to report
+ *          catastrophic failures anyway, in PhysicsFS 2.1 this function's
+ *          policy changed: it will either return a list of complete results
+ *          or it will return NULL for any failure of any kind, so we can
+ *          guarantee that the enumeration ran to completion and has no gaps
+ *          in its results.
+ *
  * Matching directories are interpolated. That is, if "C:\mydir" is in the
  *  search path and contains a directory "savegames" that contains "x.sav",
  *  "y.sav", and "z.sav", and there is also a "C:\userdir" in the search path
@@ -1099,15 +1105,16 @@ PHYSFS_DECL const char *PHYSFS_getRealDir(const char *filename);
  *
  * Feel free to sort the list however you like. However, the returned data
  *  will always contain no duplicates, and will be always sorted in alphabetic
- *  (rather: Unicode) order for you.
+ *  (rather: case-sensitive Unicode) order for you.
  *
  * Don't forget to call PHYSFS_freeList() with the return value from this
  *  function when you are done with it.
  *
  *    \param dir directory in platform-independent notation to enumerate.
- *   \return Null-terminated array of null-terminated strings.
+ *   \return Null-terminated array of null-terminated strings, or NULL for
+ *           failure cases.
  *
- * \sa PHYSFS_enumerateFilesCallback
+ * \sa PHYSFS_enumerate
  */
 PHYSFS_DECL char **PHYSFS_enumerateFiles(const char *dir);
 
@@ -1216,8 +1223,8 @@ PHYSFS_DECL PHYSFS_sint64 PHYSFS_getLastModTime(const char *filename)
  *  symlink with this function will fail in such a case.
  *
  *   \param filename File to open.
- *  \return A valid PhysicsFS filehandle on success, NULL on error. Specifics
- *           of the error can be gleaned from PHYSFS_getLastError().
+ *  \return A valid PhysicsFS filehandle on success, NULL on error. Use
+ *          PHYSFS_getLastErrorCode() to obtain the specific error.
  *
  * \sa PHYSFS_openRead
  * \sa PHYSFS_openAppend
@@ -1242,8 +1249,8 @@ PHYSFS_DECL PHYSFS_File *PHYSFS_openWrite(const char *filename);
  *  symlink with this function will fail in such a case.
  *
  *   \param filename File to open.
- *  \return A valid PhysicsFS filehandle on success, NULL on error. Specifics
- *           of the error can be gleaned from PHYSFS_getLastError().
+ *  \return A valid PhysicsFS filehandle on success, NULL on error. Use
+ *          PHYSFS_getLastErrorCode() to obtain the specific error.
  *
  * \sa PHYSFS_openRead
  * \sa PHYSFS_openWrite
@@ -1267,8 +1274,8 @@ PHYSFS_DECL PHYSFS_File *PHYSFS_openAppend(const char *filename);
  *  symlink with this function will fail in such a case.
  *
  *   \param filename File to open.
- *  \return A valid PhysicsFS filehandle on success, NULL on error. Specifics
- *           of the error can be gleaned from PHYSFS_getLastError().
+ *  \return A valid PhysicsFS filehandle on success, NULL on error.
+ *          Use PHYSFS_getLastErrorCode() to obtain the specific error.
  *
  * \sa PHYSFS_openWrite
  * \sa PHYSFS_openAppend
@@ -1289,8 +1296,8 @@ PHYSFS_DECL PHYSFS_File *PHYSFS_openRead(const char *filename);
  *  return value from the close call in addition to every writing call!
  *
  *   \param handle handle returned from PHYSFS_open*().
- *  \return nonzero on success, zero on error. Specifics of the error can be
- *          gleaned from PHYSFS_getLastError().
+ *  \return nonzero on success, zero on error. Use PHYSFS_getLastErrorCode()
+ *          to obtain the specific error.
  *
  * \sa PHYSFS_openRead
  * \sa PHYSFS_openWrite
@@ -1316,9 +1323,9 @@ PHYSFS_DECL int PHYSFS_close(PHYSFS_File *handle);
  *   \param buffer buffer to store read data into.
  *   \param objSize size in bytes of objects being read from (handle).
  *   \param objCount number of (objSize) objects to read from (handle).
- *  \return number of objects read. PHYSFS_getLastError() can shed light on
- *           the reason this might be < (objCount), as can PHYSFS_eof().
- *            -1 if complete failure.
+ *  \return number of objects read. PHYSFS_getLastErrorCode() can shed light
+ *          on the reason this might be < (objCount), as can PHYSFS_eof().
+ *          -1 if complete failure.
  *
  * \sa PHYSFS_readBytes
  * \sa PHYSFS_eof
@@ -1346,8 +1353,9 @@ PHYSFS_DECL PHYSFS_sint64 PHYSFS_read(PHYSFS_File *handle,
  *   \param buffer buffer of bytes to write to (handle).
  *   \param objSize size in bytes of objects being written to (handle).
  *   \param objCount number of (objSize) objects to write to (handle).
- *  \return number of objects written. PHYSFS_getLastError() can shed light on
- *           the reason this might be < (objCount). -1 if complete failure.
+ *  \return number of objects written. PHYSFS_getLastErrorCode() can shed
+ *          light on the reason this might be < (objCount). -1 if complete
+ *          failure.
  *
  * \sa PHYSFS_writeBytes
  */
@@ -1381,7 +1389,7 @@ PHYSFS_DECL int PHYSFS_eof(PHYSFS_File *handle);
  *
  *   \param handle handle returned from PHYSFS_open*().
  *  \return offset in bytes from start of file. -1 if error occurred.
- *           Specifics of the error can be gleaned from PHYSFS_getLastError().
+ *           Use PHYSFS_getLastErrorCode() to obtain the specific error.
  *
  * \sa PHYSFS_seek
  */
@@ -1397,8 +1405,8 @@ PHYSFS_DECL PHYSFS_sint64 PHYSFS_tell(PHYSFS_File *handle);
  *
  *   \param handle handle returned from PHYSFS_open*().
  *   \param pos number of bytes from start of file to seek to.
- *  \return nonzero on success, zero on error. Specifics of the error can be
- *          gleaned from PHYSFS_getLastError().
+ *  \return nonzero on success, zero on error. Use PHYSFS_getLastErrorCode()
+ *          to obtain the specific error.
  *
  * \sa PHYSFS_tell
  */
@@ -1487,8 +1495,6 @@ PHYSFS_DECL int PHYSFS_flush(PHYSFS_File *handle);
 
 
 /* Byteorder stuff... */
-
-#ifndef SWIG  /* not available from scripting languages. */
 
 /**
  * \fn PHYSFS_sint16 PHYSFS_swapSLE16(PHYSFS_sint16 val)
@@ -1654,8 +1660,6 @@ PHYSFS_DECL PHYSFS_sint64 PHYSFS_swapSBE64(PHYSFS_sint64 val);
  */
 PHYSFS_DECL PHYSFS_uint64 PHYSFS_swapUBE64(PHYSFS_uint64 val);
 
-#endif  /* SWIG */
-
 
 /**
  * \fn int PHYSFS_readSLE16(PHYSFS_File *file, PHYSFS_sint16 *val)
@@ -1668,7 +1672,7 @@ PHYSFS_DECL PHYSFS_uint64 PHYSFS_swapUBE64(PHYSFS_uint64 val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_readSLE16(PHYSFS_File *file, PHYSFS_sint16 *val);
 
@@ -1684,7 +1688,7 @@ PHYSFS_DECL int PHYSFS_readSLE16(PHYSFS_File *file, PHYSFS_sint16 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  *
  */
 PHYSFS_DECL int PHYSFS_readULE16(PHYSFS_File *file, PHYSFS_uint16 *val);
@@ -1701,7 +1705,7 @@ PHYSFS_DECL int PHYSFS_readULE16(PHYSFS_File *file, PHYSFS_uint16 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_readSBE16(PHYSFS_File *file, PHYSFS_sint16 *val);
 
@@ -1717,7 +1721,7 @@ PHYSFS_DECL int PHYSFS_readSBE16(PHYSFS_File *file, PHYSFS_sint16 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  *
  */
 PHYSFS_DECL int PHYSFS_readUBE16(PHYSFS_File *file, PHYSFS_uint16 *val);
@@ -1734,7 +1738,7 @@ PHYSFS_DECL int PHYSFS_readUBE16(PHYSFS_File *file, PHYSFS_uint16 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_readSLE32(PHYSFS_File *file, PHYSFS_sint32 *val);
 
@@ -1750,7 +1754,7 @@ PHYSFS_DECL int PHYSFS_readSLE32(PHYSFS_File *file, PHYSFS_sint32 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  *
  */
 PHYSFS_DECL int PHYSFS_readULE32(PHYSFS_File *file, PHYSFS_uint32 *val);
@@ -1767,7 +1771,7 @@ PHYSFS_DECL int PHYSFS_readULE32(PHYSFS_File *file, PHYSFS_uint32 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_readSBE32(PHYSFS_File *file, PHYSFS_sint32 *val);
 
@@ -1783,7 +1787,7 @@ PHYSFS_DECL int PHYSFS_readSBE32(PHYSFS_File *file, PHYSFS_sint32 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  *
  */
 PHYSFS_DECL int PHYSFS_readUBE32(PHYSFS_File *file, PHYSFS_uint32 *val);
@@ -1800,7 +1804,7 @@ PHYSFS_DECL int PHYSFS_readUBE32(PHYSFS_File *file, PHYSFS_uint32 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  *
  * \warning Remember, PHYSFS_sint64 is only 32 bits on platforms without
  *          any sort of 64-bit support.
@@ -1819,7 +1823,7 @@ PHYSFS_DECL int PHYSFS_readSLE64(PHYSFS_File *file, PHYSFS_sint64 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  *
  * \warning Remember, PHYSFS_uint64 is only 32 bits on platforms without
  *          any sort of 64-bit support.
@@ -1838,7 +1842,7 @@ PHYSFS_DECL int PHYSFS_readULE64(PHYSFS_File *file, PHYSFS_uint64 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  *
  * \warning Remember, PHYSFS_sint64 is only 32 bits on platforms without
  *          any sort of 64-bit support.
@@ -1857,7 +1861,7 @@ PHYSFS_DECL int PHYSFS_readSBE64(PHYSFS_File *file, PHYSFS_sint64 *val);
  *    \param val pointer to where value should be stored.
  *   \return zero on failure, non-zero on success. If successful, (*val) will
  *           store the result. On failure, you can find out what went wrong
- *           from PHYSFS_getLastError().
+ *           from PHYSFS_getLastErrorCode().
  *
  * \warning Remember, PHYSFS_uint64 is only 32 bits on platforms without
  *          any sort of 64-bit support.
@@ -1875,7 +1879,7 @@ PHYSFS_DECL int PHYSFS_readUBE64(PHYSFS_File *file, PHYSFS_uint64 *val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_writeSLE16(PHYSFS_File *file, PHYSFS_sint16 val);
 
@@ -1890,7 +1894,7 @@ PHYSFS_DECL int PHYSFS_writeSLE16(PHYSFS_File *file, PHYSFS_sint16 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_writeULE16(PHYSFS_File *file, PHYSFS_uint16 val);
 
@@ -1905,7 +1909,7 @@ PHYSFS_DECL int PHYSFS_writeULE16(PHYSFS_File *file, PHYSFS_uint16 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_writeSBE16(PHYSFS_File *file, PHYSFS_sint16 val);
 
@@ -1920,7 +1924,7 @@ PHYSFS_DECL int PHYSFS_writeSBE16(PHYSFS_File *file, PHYSFS_sint16 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_writeUBE16(PHYSFS_File *file, PHYSFS_uint16 val);
 
@@ -1935,7 +1939,7 @@ PHYSFS_DECL int PHYSFS_writeUBE16(PHYSFS_File *file, PHYSFS_uint16 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_writeSLE32(PHYSFS_File *file, PHYSFS_sint32 val);
 
@@ -1950,7 +1954,7 @@ PHYSFS_DECL int PHYSFS_writeSLE32(PHYSFS_File *file, PHYSFS_sint32 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_writeULE32(PHYSFS_File *file, PHYSFS_uint32 val);
 
@@ -1965,7 +1969,7 @@ PHYSFS_DECL int PHYSFS_writeULE32(PHYSFS_File *file, PHYSFS_uint32 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_writeSBE32(PHYSFS_File *file, PHYSFS_sint32 val);
 
@@ -1980,7 +1984,7 @@ PHYSFS_DECL int PHYSFS_writeSBE32(PHYSFS_File *file, PHYSFS_sint32 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  */
 PHYSFS_DECL int PHYSFS_writeUBE32(PHYSFS_File *file, PHYSFS_uint32 val);
 
@@ -1995,7 +1999,7 @@ PHYSFS_DECL int PHYSFS_writeUBE32(PHYSFS_File *file, PHYSFS_uint32 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  *
  * \warning Remember, PHYSFS_sint64 is only 32 bits on platforms without
  *          any sort of 64-bit support.
@@ -2013,7 +2017,7 @@ PHYSFS_DECL int PHYSFS_writeSLE64(PHYSFS_File *file, PHYSFS_sint64 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  *
  * \warning Remember, PHYSFS_uint64 is only 32 bits on platforms without
  *          any sort of 64-bit support.
@@ -2031,7 +2035,7 @@ PHYSFS_DECL int PHYSFS_writeULE64(PHYSFS_File *file, PHYSFS_uint64 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  *
  * \warning Remember, PHYSFS_sint64 is only 32 bits on platforms without
  *          any sort of 64-bit support.
@@ -2049,7 +2053,7 @@ PHYSFS_DECL int PHYSFS_writeSBE64(PHYSFS_File *file, PHYSFS_sint64 val);
  *    \param file PhysicsFS file handle to which to write.
  *    \param val Value to convert and write.
  *   \return zero on failure, non-zero on success. On failure, you can
- *           find out what went wrong from PHYSFS_getLastError().
+ *           find out what went wrong from PHYSFS_getLastErrorCode().
  *
  * \warning Remember, PHYSFS_uint64 is only 32 bits on platforms without
  *          any sort of 64-bit support.
@@ -2090,8 +2094,6 @@ PHYSFS_DECL int PHYSFS_isInit(void);
  */
 PHYSFS_DECL int PHYSFS_symbolicLinksPermitted(void);
 
-
-#ifndef SWIG  /* not available from scripting languages. */
 
 /**
  * \struct PHYSFS_Allocator
@@ -2152,8 +2154,6 @@ typedef struct PHYSFS_Allocator
  */
 PHYSFS_DECL int PHYSFS_setAllocator(const PHYSFS_Allocator *allocator);
 
-#endif  /* SWIG */
-
 
 /**
  * \fn int PHYSFS_mount(const char *newDir, const char *mountPoint, int appendToPath)
@@ -2188,8 +2188,8 @@ PHYSFS_DECL int PHYSFS_setAllocator(const PHYSFS_Allocator *allocator);
  *                     NULL or "" is equivalent to "/".
  *   \param appendToPath nonzero to append to search path, zero to prepend.
  *  \return nonzero if added to path, zero on failure (bogus archive, dir
- *                   missing, etc). Specifics of the error can be
- *                   gleaned from PHYSFS_getLastError().
+ *          missing, etc). Use PHYSFS_getLastErrorCode() to obtain
+ *          the specific error.
  *
  * \sa PHYSFS_removeFromSearchPath
  * \sa PHYSFS_getSearchPath
@@ -2215,8 +2215,8 @@ PHYSFS_DECL int PHYSFS_mount(const char *newDir,
  *              used when adding, even if your string would also reference
  *              the same file with a different string of characters.
  *  \return READ-ONLY string of mount point if added to path, NULL on failure
- *          (bogus archive, etc) Specifics of the error can be gleaned from
- *          PHYSFS_getLastError().
+ *          (bogus archive, etc). Use PHYSFS_getLastErrorCode() to obtain the
+ *          specific error.
  *
  * \sa PHYSFS_removeFromSearchPath
  * \sa PHYSFS_getSearchPath
@@ -2224,8 +2224,6 @@ PHYSFS_DECL int PHYSFS_mount(const char *newDir,
  */
 PHYSFS_DECL const char *PHYSFS_getMountPoint(const char *dir);
 
-
-#ifndef SWIG  /* not available from scripting languages. */
 
 /**
  * \typedef PHYSFS_StringCallback
@@ -2258,6 +2256,9 @@ typedef void (*PHYSFS_StringCallback)(void *data, const char *str);
  * \typedef PHYSFS_EnumFilesCallback
  * \brief Function signature for callbacks that enumerate files.
  *
+ * \warning As of PhysicsFS 2.1, Use PHYSFS_EnumerateCallback with
+ *  PHYSFS_enumerate() instead; it gives you more control over the process.
+ *
  * These are used to report a list of directory entries to an original caller,
  *  one file/dir/symlink per callback. All strings are UTF-8 encoded.
  *  Functions should not try to modify or free any string's memory.
@@ -2267,9 +2268,10 @@ typedef void (*PHYSFS_StringCallback)(void *data, const char *str);
  *  PHYSFS_freeList(). The callback means that the library doesn't need to
  *  allocate an entire list and all the strings up front.
  *
- * Be aware that promises data ordering in the list versions are not
+ * Be aware that promised data ordering in the list versions are not
  *  necessarily so in the callback versions. Check the documentation on
- *  specific APIs, but strings may not be sorted as you expect.
+ *  specific APIs, but strings may not be sorted as you expect and you might
+ *  get duplicate strings.
  *
  *    \param data User-defined data pointer, passed through from the API
  *                that eventually called the callback.
@@ -2363,54 +2365,32 @@ PHYSFS_DECL void PHYSFS_getSearchPathCallback(PHYSFS_StringCallback c, void *d);
  * \fn void PHYSFS_enumerateFilesCallback(const char *dir, PHYSFS_EnumFilesCallback c, void *d)
  * \brief Get a file listing of a search path's directory, using an application-defined callback.
  *
- * Internally, PHYSFS_enumerateFiles() just calls this function and then builds
- *  a list before returning to the application, so functionality is identical
- *  except for how the information is represented to the application.
+ * \deprecated As of PhysicsFS 2.1, use PHYSFS_enumerate() instead. This
+ *  function has no way to report errors (or to have the callback signal an
+ *  error or request a stop), so if data will be lost, your callback has no
+ *  way to direct the process, and your calling app has no way to know.
  *
- * Unlike PHYSFS_enumerateFiles(), this function does not return an array.
- *  Rather, it calls a function specified by the application once per
- *  element of the search path:
+ * As of PhysicsFS 2.1, this function just wraps PHYSFS_enumerate() and
+ *  ignores errors. Consider using PHYSFS_enumerate() or
+ *  PHYSFS_enumerateFiles() instead.
  *
- * \code
- *
- * static void printDir(void *data, const char *origdir, const char *fname)
- * {
- *     printf(" * We've got [%s] in [%s].\n", fname, origdir);
- * }
- *
- * // ...
- * PHYSFS_enumerateFilesCallback("/some/path", printDir, NULL);
- * \endcode
- *
- * !!! FIXME: enumerateFiles() does not promise alphabetical sorting by
- * !!! FIXME:  case-sensitivity in the code, and doesn't promise sorting at
- * !!! FIXME:  all in the above docs.
- *
- * Items sent to the callback are not guaranteed to be in any order whatsoever.
- *  There is no sorting done at this level, and if you need that, you should
- *  probably use PHYSFS_enumerateFiles() instead, which guarantees
- *  alphabetical sorting. This form reports whatever is discovered in each
- *  archive before moving on to the next. Even within one archive, we can't
- *  guarantee what order it will discover data. <em>Any sorting you find in
- *  these callbacks is just pure luck. Do not rely on it.</em> As this walks
- *  the entire list of archives, you may receive duplicate filenames.
- *
- *    \param dir Directory, in platform-independent notation, to enumerate.
- *    \param c Callback function to notify about search path elements.
- *    \param d Application-defined data passed to callback. Can be NULL.
- *
- * \sa PHYSFS_EnumFilesCallback
+ * \sa PHYSFS_enumerate
  * \sa PHYSFS_enumerateFiles
+ * \sa PHYSFS_EnumFilesCallback
  */
 PHYSFS_DECL void PHYSFS_enumerateFilesCallback(const char *dir,
                                                PHYSFS_EnumFilesCallback c,
-                                               void *d);
+                                               void *d) PHYSFS_DEPRECATED;
 
 /**
  * \fn void PHYSFS_utf8FromUcs4(const PHYSFS_uint32 *src, char *dst, PHYSFS_uint64 len)
  * \brief Convert a UCS-4 string to a UTF-8 string.
  *
- * UCS-4 strings are 32-bits per character: \c wchar_t on Unix.
+ * \warning This function will not report an error if there are invalid UCS-4
+ *          values in the source string. It will replace them with a '?'
+ *          character and continue on.
+ *
+ * UCS-4 (aka UTF-32) strings are 32-bits per character: \c wchar_t on Unix.
  *
  * To ensure that the destination buffer is large enough for the conversion,
  *  please allocate a buffer that is the same size as the source buffer. UTF-8
@@ -2432,7 +2412,11 @@ PHYSFS_DECL void PHYSFS_utf8FromUcs4(const PHYSFS_uint32 *src, char *dst,
  * \fn void PHYSFS_utf8ToUcs4(const char *src, PHYSFS_uint32 *dst, PHYSFS_uint64 len)
  * \brief Convert a UTF-8 string to a UCS-4 string.
  *
- * UCS-4 strings are 32-bits per character: \c wchar_t on Unix.
+ * \warning This function will not report an error if there are invalid UTF-8
+ *          sequences in the source string. It will replace them with a '?'
+ *          character and continue on.
+ *
+ * UCS-4 (aka UTF-32) strings are 32-bits per character: \c wchar_t on Unix.
  *
  * To ensure that the destination buffer is large enough for the conversion,
  *  please allocate a buffer that is four times the size of the source buffer.
@@ -2456,6 +2440,10 @@ PHYSFS_DECL void PHYSFS_utf8ToUcs4(const char *src, PHYSFS_uint32 *dst,
  *
  * \warning you almost certainly should use PHYSFS_utf8FromUtf16(), which
  *  became available in PhysicsFS 2.1, unless you know what you're doing.
+ *
+ * \warning This function will not report an error if there are invalid UCS-2
+ *          values in the source string. It will replace them with a '?'
+ *          character and continue on.
  *
  * UCS-2 strings are 16-bits per character: \c TCHAR on Windows, when building
  *  with Unicode support. Please note that modern versions of Windows use
@@ -2486,6 +2474,10 @@ PHYSFS_DECL void PHYSFS_utf8FromUcs2(const PHYSFS_uint16 *src, char *dst,
  *
  * \warning you almost certainly should use PHYSFS_utf8ToUtf16(), which
  *  became available in PhysicsFS 2.1, unless you know what you're doing.
+ *
+ * \warning This function will not report an error if there are invalid UTF-8
+ *          sequences in the source string. It will replace them with a '?'
+ *          character and continue on.
  *
  * UCS-2 strings are 16-bits per character: \c TCHAR on Windows, when building
  *  with Unicode support. Please note that modern versions of Windows use
@@ -2540,6 +2532,222 @@ PHYSFS_DECL void PHYSFS_utf8FromLatin1(const char *src, char *dst,
 /* Everything above this line is part of the PhysicsFS 2.0 API. */
 
 /**
+ * \fn int PHYSFS_caseFold(const PHYSFS_uint32 from, PHYSFS_uint32 *to)
+ * \brief "Fold" a Unicode codepoint to a lowercase equivalent.
+ *
+ * (This is for limited, hardcore use. If you don't immediately see a need
+ *  for it, you can probably ignore this forever.)
+ *
+ * This will convert a Unicode codepoint into its lowercase equivalent.
+ *  Bogus codepoints and codepoints without a lowercase equivalent will
+ *  be returned unconverted.
+ *
+ * Note that you might get multiple codepoints in return! The German Eszett,
+ *  for example, will fold down to two lowercase latin 's' codepoints. The
+ *  theory is that if you fold two strings, one with an Eszett and one with
+ *  "SS" down, they will match.
+ *
+ * \warning Anyone that is a student of Unicode knows about the "Turkish I"
+ *          problem. This API does not handle it. Assume this one letter
+ *          in all of Unicode will definitely fold sort of incorrectly. If
+ *          you don't know what this is about, you can probably ignore this
+ *          problem for most of the planet, but perfection is impossible.
+ *
+ *   \param from The codepoint to fold.
+ *   \param to Buffer to store the folded codepoint values into. This should
+ *             point to space for at least 3 PHYSFS_uint32 slots.
+ *  \return The number of codepoints the folding produced. Between 1 and 3.
+ */
+PHYSFS_DECL int PHYSFS_caseFold(const PHYSFS_uint32 from, PHYSFS_uint32 *to);
+
+
+/**
+ * \fn int PHYSFS_utf8stricmp(const char *str1, const char *str2)
+ * \brief Case-insensitive compare of two UTF-8 strings.
+ *
+ * This is a strcasecmp/stricmp replacement that expects both strings
+ *  to be in UTF-8 encoding. It will do "case folding" to decide if the
+ *  Unicode codepoints in the strings match.
+ *
+ * If both strings are exclusively low-ASCII characters, this will do the
+ *  right thing, as that is also valid UTF-8. If there are any high-ASCII
+ *  chars, this will not do what you expect!
+ *
+ * It will report which string is "greater than" the other, but be aware that
+ *  this doesn't necessarily mean anything: 'a' may be "less than" 'b', but
+ *  a Japanese kuten has no meaningful alphabetically relationship to
+ *  a Greek lambda, but being able to assign a reliable "value" makes sorting
+ *  algorithms possible, if not entirely sane. Most cases should treat the
+ *  return value as "equal" or "not equal".
+ *
+ * Like stricmp, this expects both strings to be NULL-terminated.
+ *
+ *   \param str1 First string to compare.
+ *   \param str2 Second string to compare.
+ *  \return -1 if str1 is "less than" str2, 1 if "greater than", 0 if equal.
+ */
+PHYSFS_DECL int PHYSFS_utf8stricmp(const char *str1, const char *str2);
+
+/**
+ * \fn int PHYSFS_utf16stricmp(const PHYSFS_uint16 *str1, const PHYSFS_uint16 *str2)
+ * \brief Case-insensitive compare of two UTF-16 strings.
+ *
+ * This is a strcasecmp/stricmp replacement that expects both strings
+ *  to be in UTF-16 encoding. It will do "case folding" to decide if the
+ *  Unicode codepoints in the strings match.
+ *
+ * It will report which string is "greater than" the other, but be aware that
+ *  this doesn't necessarily mean anything: 'a' may be "less than" 'b', but
+ *  a Japanese kuten has no meaningful alphabetically relationship to
+ *  a Greek lambda, but being able to assign a reliable "value" makes sorting
+ *  algorithms possible, if not entirely sane. Most cases should treat the
+ *  return value as "equal" or "not equal".
+ *
+ * Like stricmp, this expects both strings to be NULL-terminated.
+ *
+ *   \param str1 First string to compare.
+ *   \param str2 Second string to compare.
+ *  \return -1 if str1 is "less than" str2, 1 if "greater than", 0 if equal.
+ */
+PHYSFS_DECL int PHYSFS_utf16stricmp(const PHYSFS_uint16 *str1,
+                                    const PHYSFS_uint16 *str2);
+
+/**
+ * \fn int PHYSFS_ucs4stricmp(const PHYSFS_uint32 *str1, const PHYSFS_uint32 *str2)
+ * \brief Case-insensitive compare of two UCS-4 strings.
+ *
+ * This is a strcasecmp/stricmp replacement that expects both strings
+ *  to be in UCS-4 (aka UTF-32) encoding. It will do "case folding" to decide
+ *  if the Unicode codepoints in the strings match.
+ *
+ * It will report which string is "greater than" the other, but be aware that
+ *  this doesn't necessarily mean anything: 'a' may be "less than" 'b', but
+ *  a Japanese kuten has no meaningful alphabetically relationship to
+ *  a Greek lambda, but being able to assign a reliable "value" makes sorting
+ *  algorithms possible, if not entirely sane. Most cases should treat the
+ *  return value as "equal" or "not equal".
+ *
+ * Like stricmp, this expects both strings to be NULL-terminated.
+ *
+ *   \param str1 First string to compare.
+ *   \param str2 Second string to compare.
+ *  \return -1 if str1 is "less than" str2, 1 if "greater than", 0 if equal.
+ */
+PHYSFS_DECL int PHYSFS_ucs4stricmp(const PHYSFS_uint32 *str1,
+                                   const PHYSFS_uint32 *str2);
+
+
+/**
+ * \typedef PHYSFS_EnumerateCallback
+ * \brief Possible return values from PHYSFS_EnumerateCallback.
+ *
+ * These values dictate if an enumeration callback should continue to fire,
+ *  or stop (and why it is stopping).
+ *
+ * \sa PHYSFS_EnumerateCallback
+ * \sa PHYSFS_enumerate
+ */
+typedef enum PHYSFS_EnumerateCallbackResult
+{
+    PHYSFS_ENUM_ERROR = -1,   /**< Stop enumerating, report error to app. */
+    PHYSFS_ENUM_STOP = 0,     /**< Stop enumerating, report success to app. */
+    PHYSFS_ENUM_OK = 1        /**< Keep enumerating, no problems */
+} PHYSFS_EnumerateCallbackResult;
+
+/**
+ * \typedef PHYSFS_EnumerateCallback
+ * \brief Function signature for callbacks that enumerate and return results.
+ *
+ * This is the same thing as PHYSFS_EnumFilesCallback from PhysicsFS 2.0,
+ *  except it can return a result from the callback: namely: if you're looking
+ *  for something specific, once you find it, you can tell PhysicsFS to stop
+ *  enumerating further. This is used with PHYSFS_enumerate(), which we
+ *  hopefully got right this time.  :)
+ *
+ *    \param data User-defined data pointer, passed through from the API
+ *                that eventually called the callback.
+ *    \param origdir A string containing the full path, in platform-independent
+ *                   notation, of the directory containing this file. In most
+ *                   cases, this is the directory on which you requested
+ *                   enumeration, passed in the callback for your convenience.
+ *    \param fname The filename that is being enumerated. It may not be in
+ *                 alphabetical order compared to other callbacks that have
+ *                 fired, and it will not contain the full path. You can
+ *                 recreate the fullpath with $origdir/$fname ... The file
+ *                 can be a subdirectory, a file, a symlink, etc.
+ *   \return A value from PHYSFS_EnumerateCallbackResult.
+ *           All other values are (currently) undefined; don't use them.
+ *
+ * \sa PHYSFS_enumerate
+ * \sa PHYSFS_EnumerateCallbackResult
+ */
+typedef PHYSFS_EnumerateCallbackResult (*PHYSFS_EnumerateCallback)(void *data,
+                                       const char *origdir, const char *fname);
+
+/**
+ * \fn int PHYSFS_enumerate(const char *dir, PHYSFS_EnumerateCallback c, void *d)
+ * \brief Get a file listing of a search path's directory, using an application-defined callback, with errors reported.
+ *
+ * Internally, PHYSFS_enumerateFiles() just calls this function and then builds
+ *  a list before returning to the application, so functionality is identical
+ *  except for how the information is represented to the application.
+ *
+ * Unlike PHYSFS_enumerateFiles(), this function does not return an array.
+ *  Rather, it calls a function specified by the application once per
+ *  element of the search path:
+ *
+ * \code
+ *
+ * static int printDir(void *data, const char *origdir, const char *fname)
+ * {
+ *     printf(" * We've got [%s] in [%s].\n", fname, origdir);
+ *     return 1;  // give me more data, please.
+ * }
+ *
+ * // ...
+ * PHYSFS_enumerate("/some/path", printDir, NULL);
+ * \endcode
+ *
+ * Items sent to the callback are not guaranteed to be in any order whatsoever.
+ *  There is no sorting done at this level, and if you need that, you should
+ *  probably use PHYSFS_enumerateFiles() instead, which guarantees
+ *  alphabetical sorting. This form reports whatever is discovered in each
+ *  archive before moving on to the next. Even within one archive, we can't
+ *  guarantee what order it will discover data. <em>Any sorting you find in
+ *  these callbacks is just pure luck. Do not rely on it.</em> As this walks
+ *  the entire list of archives, you may receive duplicate filenames.
+ *
+ * This API and the callbacks themselves are capable of reporting errors.
+ *  Prior to this API, callbacks had to accept every enumerated item, even if
+ *  they were only looking for a specific thing and wanted to stop after that,
+ *  or had a serious error and couldn't alert anyone. Furthermore, if
+ *  PhysicsFS itself had a problem (disk error or whatnot), it couldn't report
+ *  it to the calling app, it would just have to skip items or stop
+ *  enumerating outright, and the caller wouldn't know it had lost some data
+ *  along the way.
+ *
+ * Now the caller can be sure it got a complete data set, and its callback has
+ *  control if it wants enumeration to stop early. See the documentation for
+ *  PHYSFS_EnumerateCallback for details on how your callback should behave.
+ *
+ *    \param dir Directory, in platform-independent notation, to enumerate.
+ *    \param c Callback function to notify about search path elements.
+ *    \param d Application-defined data passed to callback. Can be NULL.
+ *   \return non-zero on success, zero on failure. Use
+ *           PHYSFS_getLastErrorCode() to obtain the specific error. If the
+ *           callback returns PHYSFS_ENUM_STOP to stop early, this will be
+ *           considered success. Callbacks returning PHYSFS_ENUM_ERROR will
+ *           make this function return zero and set the error code to
+ *           PHYSFS_ERR_APP_CALLBACK.
+ *
+ * \sa PHYSFS_EnumerateCallback
+ * \sa PHYSFS_enumerateFiles
+ */
+PHYSFS_DECL int PHYSFS_enumerate(const char *dir, PHYSFS_EnumerateCallback c,
+                                 void *d);
+
+
+/**
  * \fn int PHYSFS_unmount(const char *oldDir)
  * \brief Remove a directory or archive from the search path.
  *
@@ -2553,13 +2761,14 @@ PHYSFS_DECL void PHYSFS_utf8FromLatin1(const char *src, char *dst,
  *  has files open in it.
  *
  *    \param oldDir dir/archive to remove.
- *   \return nonzero on success, zero on failure.
- *            Specifics of the error can be gleaned from PHYSFS_getLastError().
+ *   \return nonzero on success, zero on failure. Use
+ *           PHYSFS_getLastErrorCode() to obtain the specific error.
  *
  * \sa PHYSFS_getSearchPath
  * \sa PHYSFS_mount
  */
 PHYSFS_DECL int PHYSFS_unmount(const char *oldDir);
+
 
 /**
  * \fn const PHYSFS_Allocator *PHYSFS_getAllocator(void)
@@ -2596,7 +2805,6 @@ PHYSFS_DECL int PHYSFS_unmount(const char *oldDir);
  */
 PHYSFS_DECL const PHYSFS_Allocator *PHYSFS_getAllocator(void);
 
-#endif  /* SWIG */
 
 /**
  * \enum PHYSFS_FileType
@@ -2623,9 +2831,10 @@ typedef enum PHYSFS_FileType
  *  data will be either the number of seconds since the Unix epoch (midnight,
  *  Jan 1, 1970), or -1 if the information isn't available or applicable.
  *  The (filesize) field is measured in bytes.
- *  The (readonly) field tells you whether when you open a file for writing you
- *  are writing to the same file as if you were opening it, given you have
- *  enough filesystem rights to do that.  !!! FIXME: this might change.
+ *  The (readonly) field tells you whether the archive thinks a file is
+ *  not writable, but tends to be only an estimate (for example, your write
+ *  dir might overlap with a .zip file, meaning you _can_ successfully open
+ *  that path for writing, as it gets created elsewhere.
  *
  * \sa PHYSFS_stat
  * \sa PHYSFS_FileType
@@ -2662,11 +2871,13 @@ typedef struct PHYSFS_Stat
 PHYSFS_DECL int PHYSFS_stat(const char *fname, PHYSFS_Stat *stat);
 
 
-#ifndef SWIG  /* not available from scripting languages. */
-
 /**
  * \fn void PHYSFS_utf8FromUtf16(const PHYSFS_uint16 *src, char *dst, PHYSFS_uint64 len)
  * \brief Convert a UTF-16 string to a UTF-8 string.
+ *
+ * \warning This function will not report an error if there are invalid UTF-16
+ *          sequences in the source string. It will replace them with a '?'
+ *          character and continue on.
  *
  * UTF-16 strings are 16-bits per character (except some chars, which are
  *  32-bits): \c TCHAR on Windows, when building with Unicode support. Modern
@@ -2694,6 +2905,10 @@ PHYSFS_DECL void PHYSFS_utf8FromUtf16(const PHYSFS_uint16 *src, char *dst,
 /**
  * \fn PHYSFS_utf8ToUtf16(const char *src, PHYSFS_uint16 *dst, PHYSFS_uint64 len)
  * \brief Convert a UTF-8 string to a UTF-16 string.
+ *
+ * \warning This function will not report an error if there are invalid UTF-8
+ *          sequences in the source string. It will replace them with a '?'
+ *          character and continue on.
  *
  * UTF-16 strings are 16-bits per character (except some chars, which are
  *  32-bits): \c TCHAR on Windows, when building with Unicode support. Modern
@@ -2723,8 +2938,6 @@ PHYSFS_DECL void PHYSFS_utf8FromUtf16(const PHYSFS_uint16 *src, char *dst,
 PHYSFS_DECL void PHYSFS_utf8ToUtf16(const char *src, PHYSFS_uint16 *dst,
                                     PHYSFS_uint64 len);
 
-#endif  /* SWIG */
-
 
 /**
  * \fn PHYSFS_sint64 PHYSFS_readBytes(PHYSFS_File *handle, void *buffer, PHYSFS_uint64 len)
@@ -2737,7 +2950,7 @@ PHYSFS_DECL void PHYSFS_utf8ToUtf16(const char *src, PHYSFS_uint16 *dst,
  *   \param len number of bytes being read from (handle).
  *  \return number of bytes read. This may be less than (len); this does not
  *          signify an error, necessarily (a short read may mean EOF).
- *          PHYSFS_getLastError() can shed light on the reason this might
+ *          PHYSFS_getLastErrorCode() can shed light on the reason this might
  *          be < (len), as can PHYSFS_eof(). -1 if complete failure.
  *
  * \sa PHYSFS_eof
@@ -2764,15 +2977,14 @@ PHYSFS_DECL PHYSFS_sint64 PHYSFS_readBytes(PHYSFS_File *handle, void *buffer,
  *   \param len number of bytes being written to (handle).
  *  \return number of bytes written. This may be less than (len); in the case
  *          of an error, the system may try to write as many bytes as possible,
- *          so an incomplete write might occur. PHYSFS_getLastError() can shed
- *          light on the reason this might be < (len). -1 if complete failure.
+ *          so an incomplete write might occur. PHYSFS_getLastErrorCode() can
+ *          shed light on the reason this might be < (len). -1 if complete
+ *          failure.
  */
 PHYSFS_DECL PHYSFS_sint64 PHYSFS_writeBytes(PHYSFS_File *handle,
                                             const void *buffer,
                                             PHYSFS_uint64 len);
 
-
-#ifndef SWIG  /* not available from scripting languages. */
 
 /**
  * \struct PHYSFS_Io
@@ -2807,7 +3019,11 @@ PHYSFS_DECL PHYSFS_sint64 PHYSFS_writeBytes(PHYSFS_File *handle,
  *
  * ...in short, you're probably not going to write an HTTP implementation.
  *
- * Thread safety: TO BE DECIDED.  !!! FIXME
+ * Thread safety: PHYSFS_Io implementations are not guaranteed to be thread
+ *  safe in themselves. Under the hood where PhysicsFS uses them, the library
+ *  provides its own locks. If you plan to use them directly from separate
+ *  threads, you should either use mutexes to protect them, or don't use the
+ *  same PHYSFS_Io from two threads at the same time.
  *
  * \sa PHYSFS_mountIo
  */
@@ -2920,7 +3136,15 @@ typedef struct PHYSFS_Io
     /**
      * \brief Duplicate this i/o instance.
      *
-     *  // !!! FIXME: write me.
+     * This needs to result in a full copy of this PHYSFS_Io, that can live
+     *  completely independently. The copy needs to be able to perform all
+     *  its operations without altering the original, including either object
+     *  being destroyed separately (so, for example: they can't share a file
+     *  handle; they each need their own).
+     *
+     * If you can't duplicate a handle, it's legal to return NULL, but you
+     *  almost certainly need this functionality if you want to use this to
+     *  PHYSFS_Io to back an archive.
      *
      *   \param io The i/o instance to duplicate.
      *  \return A new value for a stream's (opaque) field, or NULL on error.
@@ -2993,8 +3217,8 @@ typedef struct PHYSFS_Io
  *                     NULL or "" is equivalent to "/".
  *   \param appendToPath nonzero to append to search path, zero to prepend.
  *  \return nonzero if added to path, zero on failure (bogus archive, stream
- *                   i/o issue, etc). Specifics of the error can be
- *                   gleaned from PHYSFS_getLastError().
+ *                   i/o issue, etc). Use PHYSFS_getLastErrorCode() to obtain
+ *                   the specific error.
  *
  * \sa PHYSFS_unmount
  * \sa PHYSFS_getSearchPath
@@ -3003,7 +3227,6 @@ typedef struct PHYSFS_Io
 PHYSFS_DECL int PHYSFS_mountIo(PHYSFS_Io *io, const char *fname,
                                const char *mountPoint, int appendToPath);
 
-#endif  /* SWIG */
 
 /**
  * \fn int PHYSFS_mountMemory(const void *ptr, PHYSFS_uint64 len, void (*del)(void *), const char *fname, const char *mountPoint, int appendToPath)
@@ -3030,7 +3253,7 @@ PHYSFS_DECL int PHYSFS_mountIo(PHYSFS_Io *io, const char *fname,
  *
  * If this function fails, (del) is not called.
  *
- *   \param ptr Address of the memory buffer containing the archive data.
+ *   \param buf Address of the memory buffer containing the archive data.
  *   \param len Size of memory buffer, in bytes.
  *   \param del A callback that triggers upon unmount. Can be NULL.
  *   \param fname Filename that can represent this stream. Can be NULL.
@@ -3039,8 +3262,7 @@ PHYSFS_DECL int PHYSFS_mountIo(PHYSFS_Io *io, const char *fname,
  *                     NULL or "" is equivalent to "/".
  *   \param appendToPath nonzero to append to search path, zero to prepend.
  *  \return nonzero if added to path, zero on failure (bogus archive, etc).
- *                  Specifics of the error can be gleaned from
- *                  PHYSFS_getLastError().
+ *          Use PHYSFS_getLastErrorCode() to obtain the specific error.
  *
  * \sa PHYSFS_unmount
  * \sa PHYSFS_getSearchPath
@@ -3095,8 +3317,7 @@ PHYSFS_DECL int PHYSFS_mountMemory(const void *buf, PHYSFS_uint64 len,
  *                     NULL or "" is equivalent to "/".
  *   \param appendToPath nonzero to append to search path, zero to prepend.
  *  \return nonzero if added to path, zero on failure (bogus archive, etc).
- *                  Specifics of the error can be gleaned from
- *                  PHYSFS_getLastError().
+ *          Use PHYSFS_getLastErrorCode() to obtain the specific error.
  *
  * \sa PHYSFS_unmount
  * \sa PHYSFS_getSearchPath
@@ -3153,7 +3374,9 @@ typedef enum PHYSFS_ErrorCode
     PHYSFS_ERR_BUSY,             /**< Tried to modify a file the OS needs.  */
     PHYSFS_ERR_DIR_NOT_EMPTY,    /**< Tried to delete dir with files in it. */
     PHYSFS_ERR_OS_ERROR,         /**< Unspecified OS-level error.           */
-    PHYSFS_ERR_DUPLICATE         /**< Duplicate entry.                      */
+    PHYSFS_ERR_DUPLICATE,        /**< Duplicate entry.                      */
+    PHYSFS_ERR_BAD_PASSWORD,     /**< Bad password.                         */
+    PHYSFS_ERR_APP_CALLBACK      /**< Application callback reported error.  */
 } PHYSFS_ErrorCode;
 
 
@@ -3179,7 +3402,7 @@ typedef enum PHYSFS_ErrorCode
  *  you're expecting and plan to handle. But with most things that involve
  *  file systems, the best course of action is usually to give up, report the
  *  problem to the user, and let them figure out what should be done about it.
- *  For that, you might prefer PHYSFS_getLastError() instead.
+ *  For that, you might prefer PHYSFS_getErrorByCode() instead.
  *
  *   \return Enumeration value that represents last reported error.
  *
@@ -3359,7 +3582,14 @@ PHYSFS_DECL const char *PHYSFS_getPrefDir(const char *org, const char *app);
  *  PHYSFS_setErrorCode() before returning. PhysicsFS will pass these errors
  *  back to the application unmolested in most cases.
  *
- * Thread safety: TO BE DECIDED.  !!! FIXME
+ * Thread safety: PHYSFS_Archiver implementations are not guaranteed to be
+ *  thread safe in themselves. PhysicsFS provides thread safety when it calls
+ *  into a given archiver inside the library, but it does not promise that
+ *  using the same PHYSFS_File from two threads at once is thread-safe; as
+ *  such, your PHYSFS_Archiver can assume that locking is handled for you
+ *  so long as the PHYSFS_Io you return from PHYSFS_open* doesn't change any
+ *  of your Archiver state, as the PHYSFS_Io won't be as aggressively
+ *  protected.
  *
  * \sa PHYSFS_registerArchiver
  * \sa PHYSFS_deregisterArchiver
@@ -3367,9 +3597,6 @@ PHYSFS_DECL const char *PHYSFS_getPrefDir(const char *org, const char *app);
  */
 typedef struct PHYSFS_Archiver
 {
-
-// !!! FIXME: split read/write interfaces?
-
     /**
      * \brief Binary compatibility information.
      *
@@ -3388,41 +3615,67 @@ typedef struct PHYSFS_Archiver
      */
     PHYSFS_ArchiveInfo info;
 
-// !!! FIXME: documentation: \brief?
     /**
-     * \brief
+     * \brief Open an archive provided by (io).
      *
-     * Open an archive provided by (io).
-     *  (name) is a filename associated with (io), but doesn't necessarily
+     * This is where resources are allocated and data is parsed when mounting
+     *  an archive.
+     * (name) is a filename associated with (io), but doesn't necessarily
      *  map to anything, let alone a real filename. This possibly-
      *  meaningless name is in platform-dependent notation.
      * (forWrite) is non-zero if this is to be used for
      *  the write directory, and zero if this is to be used for an
      *  element of the search path.
-     * Return NULL on failure. We ignore any error code you set here;
-     *  when PHYSFS_mount() returns, the error will be PHYSFS_ERR_UNSUPPORTED
-     *  (no Archivers could handle this data).  // !!! FIXME: yeah?
-     *  Returns non-NULL on success. The pointer returned will be
+     * (claimed) should be set to 1 if this is definitely an archive your
+     *  archiver implementation can handle, even if it fails. We use to
+     *  decide if we should stop trying other archivers if you fail to open
+     *  it. For example: the .zip archiver will set this to 1 for something
+     *  that's got a .zip file signature, even if it failed because the file
+     *  was also truncated. No sense in trying other archivers here, we
+     *  already tried to handle it with the appropriate implementation!.
+     * Return NULL on failure and set (claimed) appropriately. If no archiver
+     *  opened the archive or set (claimed), PHYSFS_mount() will report
+     *  PHYSFS_ERR_UNSUPPORTED. Otherwise, it will report the error from the
+     *  archiver that claimed the data through (claimed).
+     * Return non-NULL on success. The pointer returned will be
      *  passed as the "opaque" parameter for later calls.
      */
-    void *(*openArchive)(PHYSFS_Io *io, const char *name, int forWrite);
+    void *(*openArchive)(PHYSFS_Io *io, const char *name,
+                         int forWrite, int *claimed);
 
     /**
-     * List all files in (dirname). Each file is passed to (cb),
-     *  where a copy is made if appropriate, so you should dispose of
-     *  it properly upon return from the callback.
-     * If you have a failure, report as much as you can.
-     *  (dirname) is in platform-independent notation.
+     * \brief List all files in (dirname).
+     *
+     * Each file is passed to (cb), where a copy is made if appropriate, so
+     *  you can dispose of it upon return from the callback. (dirname) is in
+     *  platform-independent notation.
+     * If you have a failure, call PHYSFS_SetErrorCode() with whatever code
+     *  seem appropriate and return PHYSFS_ENUM_ERROR.
+     * If the callback returns PHYSFS_ENUM_ERROR, please call
+     *  PHYSFS_SetErrorCode(PHYSFS_ERR_APP_CALLBACK) and then return
+     *  PHYSFS_ENUM_ERROR as well. Don't call the callback again in any
+     *  circumstances.
+     * If the callback returns PHYSFS_ENUM_STOP, stop enumerating and return
+     *  PHYSFS_ENUM_STOP as well. Don't call the callback again in any
+     *  circumstances. Don't set an error code in this case.
+     * Callbacks are only supposed to return a value from
+     *  PHYSFS_EnumerateCallbackResult. Any other result has undefined
+     *  behavior.
+     * As long as the callback returned PHYSFS_ENUM_OK and you haven't
+     *  experienced any errors of your own, keep enumerating until you're done
+     *  and then return PHYSFS_ENUM_OK without setting an error code.
+     *
+     * \warning PHYSFS_enumerate returns zero or non-zero (success or failure),
+     *          so be aware this function pointer returns different values!
      */
-    void (*enumerateFiles)(void *opaque, const char *dirname,
-                           PHYSFS_EnumFilesCallback cb,
-                           const char *origdir, void *callbackdata);
+    PHYSFS_EnumerateCallbackResult (*enumerate)(void *opaque,
+                     const char *dirname, PHYSFS_EnumerateCallback cb,
+                     const char *origdir, void *callbackdata);
 
     /**
-     * Open file for reading.
-     *  This filename, (fnm), is in platform-independent notation.
-     * If you can't handle multiple opens of the same file,
-     *  you can opt to fail for the second call.
+     * \brief Open a file in this archive for reading.
+     *
+     * This filename, (fnm), is in platform-independent notation.
      * Fail if the file does not exist.
      * Returns NULL on failure, and calls PHYSFS_setErrorCode().
      *  Returns non-NULL on success. The pointer returned will be
@@ -3431,13 +3684,13 @@ typedef struct PHYSFS_Archiver
     PHYSFS_Io *(*openRead)(void *opaque, const char *fnm);
 
     /**
-     * Open file for writing.
+     * \brief Open a file in this archive for writing.
+     *
      * If the file does not exist, it should be created. If it exists,
-     *  it should be truncated to zero bytes. The writing
-     *  offset should be the start of the file.
+     *  it should be truncated to zero bytes. The writing offset should
+     *  be the start of the file.
+     * If the archive is read-only, this operation should fail.
      * This filename is in platform-independent notation.
-     * If you can't handle multiple opens of the same file,
-     *  you can opt to fail for the second call.
      * Returns NULL on failure, and calls PHYSFS_setErrorCode().
      *  Returns non-NULL on success. The pointer returned will be
      *  passed as the "opaque" parameter for later file calls.
@@ -3445,12 +3698,12 @@ typedef struct PHYSFS_Archiver
     PHYSFS_Io *(*openWrite)(void *opaque, const char *filename);
 
     /**
-     * Open file for appending.
+     * \brief Open a file in this archive for appending.
+     *
      * If the file does not exist, it should be created. The writing
      *  offset should be the end of the file.
+     * If the archive is read-only, this operation should fail.
      * This filename is in platform-independent notation.
-     * If you can't handle multiple opens of the same file,
-     *  you can opt to fail for the second call.
      * Returns NULL on failure, and calls PHYSFS_setErrorCode().
      *  Returns non-NULL on success. The pointer returned will be
      *  passed as the "opaque" parameter for later file calls.
@@ -3458,35 +3711,48 @@ typedef struct PHYSFS_Archiver
     PHYSFS_Io *(*openAppend)(void *opaque, const char *filename);
 
     /**
-     * Delete a file in the archive/directory.
-     *  Return non-zero on success, zero on failure.
-     *  This filename is in platform-independent notation.
-     *  This method may be NULL.
+     * \brief Delete a file or directory in the archive.
+     *
+     * This same call is used for both files and directories; there is not a
+     *  separate rmdir() call. Directories are only meant to be removed if
+     *  they are empty.
+     * If the archive is read-only, this operation should fail.
+     *
+     * Return non-zero on success, zero on failure.
+     * This filename is in platform-independent notation.
      * On failure, call PHYSFS_setErrorCode().
      */
     int (*remove)(void *opaque, const char *filename);
 
     /**
-     * Create a directory in the archive/directory.
-     *  If the application is trying to make multiple dirs, PhysicsFS
+     * \brief Create a directory in the archive.
+     *
+     * If the application is trying to make multiple dirs, PhysicsFS
      *  will split them up into multiple calls before passing them to
      *  your driver.
-     *  Return non-zero on success, zero on failure.
+     * If the archive is read-only, this operation should fail.
+     * Return non-zero on success, zero on failure.
      *  This filename is in platform-independent notation.
-     *  This method may be NULL.
      * On failure, call PHYSFS_setErrorCode().
      */
     int (*mkdir)(void *opaque, const char *filename);
 
     /**
-     * Obtain basic file metadata.
-     *  Returns non-zero on success, zero on failure.
-     *  On failure, call PHYSFS_setErrorCode().
+     * \brief Obtain basic file metadata.
+     *
+     * On success, fill in all the fields in (stat), using
+     *  reasonable defaults for fields that apply to your archive.
+     *
+     * Returns non-zero on success, zero on failure.
+     * This filename is in platform-independent notation.
+     * On failure, call PHYSFS_setErrorCode().
      */
     int (*stat)(void *opaque, const char *fn, PHYSFS_Stat *stat);
 
     /**
-     * Close directories/archives, and free any associated memory,
+     * \brief Destruct a previously-opened archive.
+     *
+     * Close this archive, and free any associated memory,
      *  including the original PHYSFS_Io and (opaque) itself, if
      *  applicable. Implementation can assume that it won't be called if
      *  there are still files open from this archive.
@@ -3498,7 +3764,17 @@ typedef struct PHYSFS_Archiver
  * \fn int PHYSFS_registerArchiver(const PHYSFS_Archiver *archiver)
  * \brief Add a new archiver to the system.
  *
- * !!! FIXME: write me.
+ * \warning This is advanced, hardcore stuff. You don't need this unless you
+ *          really know what you're doing. Most apps will not need this.
+ *
+ * If you want to provide your own archiver (for example, a custom archive
+ *  file format, or some virtual thing you want to make look like a filesystem
+ *  that you can access through the usual PhysicsFS APIs), this is where you
+ *  start. Once an archiver is successfully registered, then you can use
+ *  PHYSFS_mount() to add archives that your archiver supports to the
+ *  search path, or perhaps use it as the write dir. Internally, PhysicsFS
+ *  uses this function to register its own built-in archivers, like .zip
+ *  support, etc.
  *
  * You may not have two archivers that handle the same extension. If you are
  *  going to have a clash, you can deregister the other archiver (including
@@ -3506,6 +3782,9 @@ typedef struct PHYSFS_Archiver
  *
  * The data in (archiver) is copied; you may free this pointer when this
  *  function returns.
+ *
+ * Once this function returns successfully, PhysicsFS will be able to support
+ *  archives of this type until you deregister the archiver again.
  *
  *   \param archiver The archiver to register.
  *  \return Zero on error, non-zero on success.
@@ -3519,9 +3798,21 @@ PHYSFS_DECL int PHYSFS_registerArchiver(const PHYSFS_Archiver *archiver);
  * \fn int PHYSFS_deregisterArchiver(const char *ext)
  * \brief Remove an archiver from the system.
  *
- * !!! FIXME: write me.
+ * If for some reason, you only need your previously-registered archiver to
+ *  live for a portion of your app's lifetime, you can remove it from the
+ *  system once you're done with it through this function.
  *
  * This fails if there are any archives still open that use this archiver.
+ *
+ * This function can also remove internally-supplied archivers, like .zip
+ *  support or whatnot. This could be useful in some situations, like
+ *  disabling support for them outright or overriding them with your own
+ *  implementation. Once an internal archiver is disabled like this,
+ *  PhysicsFS provides no mechanism to recover them, short of calling
+ *  PHYSFS_deinit() and PHYSFS_init() again.
+ *
+ * PHYSFS_deinit() will automatically deregister all archivers, so you don't
+ *  need to explicitly deregister yours if you otherwise shut down cleanly.
  *
  *   \param ext Filename extension that the archiver handles.
  *  \return Zero on error, non-zero on success.

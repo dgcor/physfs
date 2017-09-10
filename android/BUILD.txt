@@ -9,7 +9,7 @@ src/*
 Android.mk
 BUILD.txt
 
-Copy this folder (android) to your Android NDK's sources folder.
+Rename this folder (android to physfs) and copy it to your Android NDK's sources folder.
 
 Add the following to the Android.mk of your project:
 
