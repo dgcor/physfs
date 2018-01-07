@@ -12,7 +12,7 @@
 cmake_minimum_required(VERSION 2.8.4)
 
 project(PhysicsFS)
-set(PHYSFS_VERSION 2.1.1)
+set(PHYSFS_VERSION 3.0.0)
 
 # Increment this if/when we break backwards compatibility.
 set(PHYSFS_SOVERSION 1)
@@ -233,7 +233,7 @@ if(PHYSFS_BUILD_TEST)
         if(READLINE_LIBRARY)
             set(HAVE_SYSTEM_READLINE TRUE)
             set(TEST_PHYSFS_LIBS ${TEST_PHYSFS_LIBS} ${READLINE_LIBRARY} ${CURSES_LIBRARY})
-            include_directories(${READLINE_H} ${HISTORY_H})
+            include_directories(SYSTEM ${READLINE_H} ${HISTORY_H})
             add_definitions(-DPHYSFS_HAVE_READLINE=1)
         endif()
     endif()
@@ -295,7 +295,7 @@ if(NOT MSVC)
     )
     install(
         FILES "${CMAKE_CURRENT_BINARY_DIR}/extras/physfs.pc"
-        DESTINATION "lib/pkgconfig"
+        DESTINATION "lib${LIB_SUFFIX}/pkgconfig"
     )
 endif()
 

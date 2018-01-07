@@ -158,6 +158,15 @@ Bug fixes,
 VDF archiver:
     Francesco Bertolaccini
 
+CMake fixes:
+    Tobias Markus
+
+Bug fixes,
+    Rémi Verschelde
+
+Bug fixes:
+    Rob Loach
+
 Other stuff:
     Your name here! Patches go to icculus@icculus.org ...
 
