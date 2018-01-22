@@ -263,11 +263,13 @@ static int MPQ_stat(void *opaque, const char *filename, PHYSFS_Stat *stat)
     stat->filesize = fileSize;
 
     stat->modtime = 0;
-    SFileGetFileInfo((HANDLE)opaque, SFileInfoFileTime, &stat->modtime, sizeof(stat->modtime), NULL);
+    SFileGetFileInfo(hFile, SFileInfoFileTime, &stat->modtime, sizeof(stat->modtime), NULL);
     stat->createtime = stat->modtime;
     stat->accesstime = 0;
     stat->filetype = PHYSFS_FILETYPE_REGULAR;
     stat->readonly = 1; /* .MPQ files are always read only */
+
+    SFileCloseFile(hFile);
 
     return 1;
 }
