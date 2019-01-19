@@ -50,18 +50,22 @@ static int locateOneElement(char *buf)
         ptr++;  /* point past dirsep to entry itself. */
     } /* else */
 
-    for (i = rc; *i != NULL; i++)
+    if (rc != NULL)
     {
-        if (PHYSFS_utf8stricmp(*i, ptr) == 0)
+        for (i = rc; *i != NULL; i++)
         {
-            strcpy(ptr, *i); /* found a match. Overwrite with this case. */
-            PHYSFS_freeList(rc);
-            return 1;
-        } /* if */
-    } /* for */
+            if (PHYSFS_utf8stricmp(*i, ptr) == 0)
+            {
+                strcpy(ptr, *i); /* found a match. Overwrite with this case. */
+                PHYSFS_freeList(rc);
+                return 1;
+            } /* if */
+        } /* for */
+
+        PHYSFS_freeList(rc);
+    } /* if */
 
     /* no match at all... */
-    PHYSFS_freeList(rc);
     return 0;
 } /* locateOneElement */
 
@@ -101,34 +105,34 @@ int main(int argc, char **argv)
 
     if (!PHYSFS_init(argv[0]))
     {
-        fprintf(stderr, "PHYSFS_init(): %s\n", PHYSFS_getLastError());
+        fprintf(stderr, "PHYSFS_init(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
         return 1;
     } /* if */
 
     if (!PHYSFS_addToSearchPath(".", 1))
     {
-        fprintf(stderr, "PHYSFS_addToSearchPath(): %s\n", PHYSFS_getLastError());
+        fprintf(stderr, "PHYSFS_addToSearchPath(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
         PHYSFS_deinit();
         return 1;
     } /* if */
 
     if (!PHYSFS_setWriteDir("."))
     {
-        fprintf(stderr, "PHYSFS_setWriteDir(): %s\n", PHYSFS_getLastError());
+        fprintf(stderr, "PHYSFS_setWriteDir(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
         PHYSFS_deinit();
         return 1;
     } /* if */
 
     if (!PHYSFS_mkdir("/a/b/c"))
     {
-        fprintf(stderr, "PHYSFS_mkdir(): %s\n", PHYSFS_getLastError());
+        fprintf(stderr, "PHYSFS_mkdir(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
         PHYSFS_deinit();
         return 1;
     } /* if */
 
     if (!PHYSFS_mkdir("/a/b/C"))
     {
-        fprintf(stderr, "PHYSFS_mkdir(): %s\n", PHYSFS_getLastError());
+        fprintf(stderr, "PHYSFS_mkdir(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
         PHYSFS_deinit();
         return 1;
     } /* if */
@@ -137,7 +141,7 @@ int main(int argc, char **argv)
     PHYSFS_close(f);
     if (f == NULL)
     {
-        fprintf(stderr, "PHYSFS_openWrite(): %s\n", PHYSFS_getLastError());
+        fprintf(stderr, "PHYSFS_openWrite(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
         PHYSFS_deinit();
         return 1;
     } /* if */
@@ -146,7 +150,7 @@ int main(int argc, char **argv)
     PHYSFS_close(f);
     if (f == NULL)
     {
-        fprintf(stderr, "PHYSFS_openWrite(): %s\n", PHYSFS_getLastError());
+        fprintf(stderr, "PHYSFS_openWrite(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
         PHYSFS_deinit();
         return 1;
     } /* if */
