@@ -105,34 +105,34 @@ int main(int argc, char **argv)
 
     if (!PHYSFS_init(argv[0]))
     {
-        fprintf(stderr, "PHYSFS_init(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+        fprintf(stderr, "PHYSFS_init(): %s\n", PHYSFS_getLastError());
         return 1;
     } /* if */
 
     if (!PHYSFS_addToSearchPath(".", 1))
     {
-        fprintf(stderr, "PHYSFS_addToSearchPath(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+        fprintf(stderr, "PHYSFS_addToSearchPath(): %s\n", PHYSFS_getLastError());
         PHYSFS_deinit();
         return 1;
     } /* if */
 
     if (!PHYSFS_setWriteDir("."))
     {
-        fprintf(stderr, "PHYSFS_setWriteDir(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+        fprintf(stderr, "PHYSFS_setWriteDir(): %s\n", PHYSFS_getLastError());
         PHYSFS_deinit();
         return 1;
     } /* if */
 
     if (!PHYSFS_mkdir("/a/b/c"))
     {
-        fprintf(stderr, "PHYSFS_mkdir(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+        fprintf(stderr, "PHYSFS_mkdir(): %s\n", PHYSFS_getLastError());
         PHYSFS_deinit();
         return 1;
     } /* if */
 
     if (!PHYSFS_mkdir("/a/b/C"))
     {
-        fprintf(stderr, "PHYSFS_mkdir(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+        fprintf(stderr, "PHYSFS_mkdir(): %s\n", PHYSFS_getLastError());
         PHYSFS_deinit();
         return 1;
     } /* if */
@@ -141,7 +141,7 @@ int main(int argc, char **argv)
     PHYSFS_close(f);
     if (f == NULL)
     {
-        fprintf(stderr, "PHYSFS_openWrite(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+        fprintf(stderr, "PHYSFS_openWrite(): %s\n", PHYSFS_getLastError());
         PHYSFS_deinit();
         return 1;
     } /* if */
@@ -150,7 +150,7 @@ int main(int argc, char **argv)
     PHYSFS_close(f);
     if (f == NULL)
     {
-        fprintf(stderr, "PHYSFS_openWrite(): %s\n", PHYSFS_getErrorByCode(PHYSFS_getLastErrorCode()));
+        fprintf(stderr, "PHYSFS_openWrite(): %s\n", PHYSFS_getLastError());
         PHYSFS_deinit();
         return 1;
     } /* if */

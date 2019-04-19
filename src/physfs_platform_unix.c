@@ -154,7 +154,7 @@ void __PHYSFS_platformDetectAvailableCDs(PHYSFS_StringCallback cb, void *data)
  *  if it doesn't exist or there were other problems. PHYSFS_SetError() is
  *  called if we have a problem.
  *
- * (envr) will be scribbled over, and you are expected to physfs_alloc.Free() the
+ * (envr) will be scribbled over, and you are expected to allocator.Free() the
  *  return value when you're done with it.
  */
 static char *findBinaryInPath(const char *bin, char *envr)
@@ -180,11 +180,11 @@ static char *findBinaryInPath(const char *bin, char *envr)
         size = strlen(start) + binlen + 2;
         if (size >= alloc_size)
         {
-            char *x = (char *) physfs_alloc.Realloc(exe, size);
+            char *x = (char *) allocator.Realloc(exe, size);
             if (!x)
             {
                 if (exe != NULL)
-                    physfs_alloc.Free(exe);
+                    allocator.Free(exe);
                 BAIL(PHYSFS_ERR_OUT_OF_MEMORY, NULL);
             } /* if */
 
@@ -208,7 +208,7 @@ static char *findBinaryInPath(const char *bin, char *envr)
     } while (ptr != NULL);
 
     if (exe != NULL)
-        physfs_alloc.Free(exe);
+        allocator.Free(exe);
 
     return NULL;  /* doesn't exist in path. */
 } /* findBinaryInPath */
@@ -222,7 +222,7 @@ static char *readSymLink(const char *path)
 
     while (1)
     {
-         char *ptr = (char *) physfs_alloc.Realloc(retval, (size_t) len);
+         char *ptr = (char *) allocator.Realloc(retval, (size_t) len);
          if (ptr == NULL)
              break;   /* out of memory. */
          retval = ptr;
@@ -241,7 +241,7 @@ static char *readSymLink(const char *path)
     } /* while */
 
     if (retval != NULL)
-        physfs_alloc.Free(retval);
+        allocator.Free(retval);
     return NULL;
 } /* readSymLink */
 
@@ -296,7 +296,7 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0)
             *(ptr+1) = '\0';
         else  /* shouldn't happen, but just in case... */
         {
-            physfs_alloc.Free(retval);
+            allocator.Free(retval);
             retval = NULL;
         } /* else */
     } /* if */
@@ -323,7 +323,7 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0)
     if (retval != NULL)
     {
         /* try to shrink buffer... */
-        char *ptr = (char *) physfs_alloc.Realloc(retval, strlen(retval) + 1);
+        char *ptr = (char *) allocator.Realloc(retval, strlen(retval) + 1);
         if (ptr != NULL)
             retval = ptr;  /* oh well if it failed. */
     } /* if */
@@ -355,7 +355,7 @@ char *__PHYSFS_platformCalcPrefDir(const char *org, const char *app)
     } /* if */
 
     len = strlen(envr) + strlen(append) + strlen(app) + 2;
-    retval = (char *) physfs_alloc.Malloc(len);
+    retval = (char *) allocator.Malloc(len);
     BAIL_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     snprintf(retval, len, "%s%s%s/", envr, append, app);
     return retval;

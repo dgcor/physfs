@@ -69,7 +69,7 @@ static char *getUserDirByUID(void)
     {
         const size_t dlen = strlen(pw->pw_dir);
         const size_t add_dirsep = (pw->pw_dir[dlen-1] != '/') ? 1 : 0;
-        retval = (char *) physfs_alloc.Malloc(dlen + 1 + add_dirsep);
+        retval = (char *) allocator.Malloc(dlen + 1 + add_dirsep);
         if (retval != NULL)
         {
             strcpy(retval, pw->pw_dir);
@@ -98,7 +98,7 @@ char *__PHYSFS_platformCalcUserDir(void)
         {
             const size_t envrlen = strlen(envr);
             const size_t add_dirsep = (envr[envrlen-1] != '/') ? 1 : 0;
-            retval = physfs_alloc.Malloc(envrlen + 1 + add_dirsep);
+            retval = allocator.Malloc(envrlen + 1 + add_dirsep);
             if (retval)
             {
                 strcpy(retval, envr);
@@ -180,7 +180,7 @@ static void *doOpen(const char *filename, int mode)
         } /* if */
     } /* if */
 
-    retval = (int *) physfs_alloc.Malloc(sizeof (int));
+    retval = (int *) allocator.Malloc(sizeof (int));
     if (!retval)
     {
         close(fd);
@@ -285,7 +285,7 @@ void __PHYSFS_platformClose(void *opaque)
 {
     const int fd = *((int *) opaque);
     (void) close(fd);  /* we don't check this. You should have used flush! */
-    physfs_alloc.Free(opaque);
+    allocator.Free(opaque);
 } /* __PHYSFS_platformClose */
 
 
@@ -352,12 +352,12 @@ void *__PHYSFS_platformGetThreadID(void)
 void *__PHYSFS_platformCreateMutex(void)
 {
     int rc;
-    PthreadMutex *m = (PthreadMutex *) physfs_alloc.Malloc(sizeof (PthreadMutex));
+    PthreadMutex *m = (PthreadMutex *) allocator.Malloc(sizeof (PthreadMutex));
     BAIL_IF(!m, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     rc = pthread_mutex_init(&m->mutex, NULL);
     if (rc != 0)
     {
-        physfs_alloc.Free(m);
+        allocator.Free(m);
         BAIL(PHYSFS_ERR_OS_ERROR, NULL);
     } /* if */
 
@@ -376,7 +376,7 @@ void __PHYSFS_platformDestroyMutex(void *mutex)
         pthread_mutex_unlock(&m->mutex);
 
     pthread_mutex_destroy(&m->mutex);
-    physfs_alloc.Free(m);
+    allocator.Free(m);
 } /* __PHYSFS_platformDestroyMutex */
 
 

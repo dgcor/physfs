@@ -34,7 +34,7 @@ void __PHYSFS_platformDeinit(void)
 
 char *__PHYSFS_platformCalcBaseDir(const char *argv0)
 {
-    char *retval = (char *) physfs_alloc.Malloc(PATH_MAX+1);
+    char *retval = (char *) allocator.Malloc(PATH_MAX+1);
     if (retval == NULL)
         BAIL(PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     else
@@ -48,7 +48,7 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0)
 
         if ((br < 0) || (br > PATH_MAX))
         {
-            physfs_alloc.Free(retval);
+            allocator.Free(retval);
             BAIL(PHYSFS_ERR_OS_ERROR, NULL);
         } /* if */
 
@@ -56,13 +56,13 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0)
         ptr = strrchr(retval, '/');
         if (ptr == NULL)  /* uhoh! */
         {
-            physfs_alloc.Free(retval);
+            allocator.Free(retval);
             BAIL(PHYSFS_ERR_OS_ERROR, NULL);
         } /* if */
 
         ptr[1] = '\0';  /* chop off filename, leave dirs and '/' */
 
-        ptr = (char *) physfs_alloc.Realloc(retval, (ptr - retval) + 2);
+        ptr = (char *) allocator.Realloc(retval, (ptr - retval) + 2);
         if (ptr != NULL)  /* just shrinking buffer; don't care if it failed. */
             retval = ptr;
     } /* else */
@@ -80,7 +80,7 @@ char *__PHYSFS_platformCalcPrefDir(const char *org, const char *app)
     if (home)
     {
         const size_t len = strlen(home) + strlen(app) + 3;
-        retval = (char *) physfs_alloc.Malloc(len);
+        retval = (char *) allocator.Malloc(len);
         BAIL_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
         snprintf(retval, len, "%s.%s/", home, app);
     } /* if */

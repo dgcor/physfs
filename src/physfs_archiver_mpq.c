@@ -7,11 +7,20 @@
 
 #if PHYSFS_SUPPORTS_MPQ
 
+#ifdef allocator
+#undef allocator
+#endif
+
 #if PHYSFS_USE_EXTERNAL_STORMLIB
 #include "../StormLib/src/StormLib.h"
 #else
 #include "StormLib/StormLib.h"
 #endif
+
+#ifdef allocator
+#undef allocator
+#endif
+#define allocator __PHYSFS_AllocatorHooks
 
 typedef struct
 {
@@ -92,9 +101,9 @@ static void MPQ_destroy(PHYSFS_Io *io)
         {
             SFileCloseFile(handle->fileHandle);
         }
-        physfs_alloc.Free(handle);
+        allocator.Free(handle);
     }
-    physfs_alloc.Free(io);
+    allocator.Free(io);
 }
 
 static const PHYSFS_Io MPQ_Io =
@@ -126,7 +135,7 @@ static void *MPQ_openArchive(PHYSFS_Io *io, const char *name,
 
     *claimed = 1;
 
-    handle = (MPQHandle *)physfs_alloc.Malloc(sizeof(MPQHandle));
+    handle = (MPQHandle *)allocator.Malloc(sizeof(MPQHandle));
     if (handle)
     {
         handle->io = io;
@@ -181,22 +190,22 @@ static PHYSFS_Io *MPQ_openRead(void *opaque, const char *filename)
         return NULL;
 
     success = SFileOpenFileEx(((MPQHandle *)opaque)->mpqHandle, filename2, 0, &hFile);
-    physfs_alloc.Free(filename2);
+    allocator.Free(filename2);
 
     if (!success)
         return NULL;
 
-    retval = (PHYSFS_Io *)physfs_alloc.Malloc(sizeof(PHYSFS_Io));
+    retval = (PHYSFS_Io *)allocator.Malloc(sizeof(PHYSFS_Io));
     if (!retval)
     {
         SFileCloseFile(hFile);
         return NULL;
     }
 
-    handle = (MPQFileHandle *)physfs_alloc.Malloc(sizeof(MPQFileHandle));
+    handle = (MPQFileHandle *)allocator.Malloc(sizeof(MPQFileHandle));
     if (!handle)
     {
-        physfs_alloc.Free(retval);
+        allocator.Free(retval);
         SFileCloseFile(hFile);
         return NULL;
     }
@@ -204,8 +213,8 @@ static PHYSFS_Io *MPQ_openRead(void *opaque, const char *filename)
     dwFileSizeLo = SFileGetFileSize(hFile, &dwFileSizeHi);
     if (dwFileSizeLo == SFILE_INVALID_SIZE || dwFileSizeHi != 0)
     {
-        physfs_alloc.Free(retval);
-        physfs_alloc.Free(hFile);
+        allocator.Free(retval);
+        allocator.Free(hFile);
         SFileCloseFile(hFile);
         return NULL;
     }
@@ -254,7 +263,7 @@ static int MPQ_stat(void *opaque, const char *filename, PHYSFS_Stat *stat)
         return 0;
 
     success = SFileOpenFileEx(((MPQHandle *)opaque)->mpqHandle, filename2, 0, &hFile);
-    physfs_alloc.Free(filename2);
+    allocator.Free(filename2);
 
     if (!success)
         return 0;
@@ -283,7 +292,7 @@ static void MPQ_closeArchive(void *opaque)
 
     SFileCloseArchive(handle->mpqHandle);
     handle->io->destroy(handle->io);
-    physfs_alloc.Free(handle);
+    allocator.Free(handle);
 }
 
 const PHYSFS_Archiver __PHYSFS_Archiver_MPQ =

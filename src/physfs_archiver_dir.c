@@ -55,7 +55,7 @@ static void *DIR_openArchive(PHYSFS_Io *io, const char *name,
         BAIL(PHYSFS_ERR_UNSUPPORTED, NULL);
 
     *claimed = 1;
-    retval = physfs_alloc.Malloc(namelen + seplen + 1);
+    retval = allocator.Malloc(namelen + seplen + 1);
     BAIL_IF(retval == NULL, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
 
     strcpy(retval, name);
@@ -154,7 +154,7 @@ static int DIR_mkdir(void *opaque, const char *name)
 
 static void DIR_closeArchive(void *opaque)
 {
-    physfs_alloc.Free(opaque);
+    allocator.Free(opaque);
 } /* DIR_closeArchive */
 
 

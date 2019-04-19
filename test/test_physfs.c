@@ -31,8 +31,8 @@
 #include "physfs.h"
 
 #define TEST_VERSION_MAJOR  3
-#define TEST_VERSION_MINOR  1
-#define TEST_VERSION_PATCH  0
+#define TEST_VERSION_MINOR  0
+#define TEST_VERSION_PATCH  2
 
 static FILE *history_file = NULL;
 static PHYSFS_uint32 do_buffer_size = 0;

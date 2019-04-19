@@ -12,7 +12,7 @@
 cmake_minimum_required(VERSION 2.8.4)
 
 project(PhysicsFS)
-set(PHYSFS_VERSION 3.1.0)
+set(PHYSFS_VERSION 3.0.2)
 
 # Increment this if/when we break backwards compatibility.
 set(PHYSFS_SOVERSION 1)
@@ -142,8 +142,9 @@ endif()
 
 option(PHYSFS_ARCHIVE_MPQ "Enable Diablo MPQ support" TRUE)
 option(PHYSFS_USE_EXTERNAL_STORMLIB "Use external StormLib for MPQ support" FALSE)
-if(PHYSFS_ARCHIVE_MPQ)
-    add_definitions(-DPHYSFS_SUPPORTS_MPQ=1)
+if(NOT PHYSFS_ARCHIVE_MPQ)
+    add_definitions(-DPHYSFS_SUPPORTS_HOG=0)
+else()
     if(PHYSFS_USE_EXTERNAL_STORMLIB)
         add_definitions(-DPHYSFS_USE_EXTERNAL_STORMLIB=1)
     else()
@@ -261,8 +262,9 @@ if(DOXYGEN_FOUND)
     file(APPEND "${PHYSFS_OUTPUT_DOXYFILE}" "OUTPUT_DIRECTORY = \"${CMAKE_CURRENT_BINARY_DIR}/docs\"\n")
     file(APPEND "${PHYSFS_OUTPUT_DOXYFILE}" "\n# End auto-generated section.\n\n")
 
+    set(PHYSFS_TARGETNAME_DOCS "docs" CACHE STRING "Name of 'docs' build target")
     add_custom_target(
-        docs
+        ${PHYSFS_TARGETNAME_DOCS}
         ${DOXYGEN_EXECUTABLE} "${PHYSFS_OUTPUT_DOXYFILE}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         COMMENT "Building documentation in 'docs' directory..."
@@ -273,14 +275,18 @@ endif()
 
 if(UNIX)
     set(PHYSFS_TARBALL "${CMAKE_CURRENT_SOURCE_DIR}/../physfs-${PHYSFS_VERSION}.tar.bz2")
+
+    set(PHYSFS_TARGETNAME_DIST "dist" CACHE STRING "Name of 'dist' build target")
     add_custom_target(
-        dist
+        ${PHYSFS_TARGETNAME_DIST}
         hg archive -t tbz2 "${PHYSFS_TARBALL}"
         WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
         COMMENT "Building source tarball '${PHYSFS_TARBALL}'..."
     )
+
+    set(PHYSFS_TARGETNAME_UNINSTALL "uninstall" CACHE STRING "Name of 'uninstall' build target")
     add_custom_target(
-        uninstall
+        ${PHYSFS_TARGETNAME_UNINSTALL}
         "${CMAKE_CURRENT_SOURCE_DIR}/extras/uninstall.sh"
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
         COMMENT "Uninstall the project..."

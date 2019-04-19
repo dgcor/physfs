@@ -238,7 +238,7 @@ static void initializeZStream(z_stream *pstr)
     memset(pstr, '\0', sizeof (z_stream));
     pstr->zalloc = zlibPhysfsAlloc;
     pstr->zfree = zlibPhysfsFree;
-    pstr->opaque = &physfs_alloc;
+    pstr->opaque = &allocator;
 } /* initializeZStream */
 
 
@@ -445,8 +445,8 @@ static PHYSFS_Io *zip_get_io(PHYSFS_Io *io, ZIPinfo *inf, ZIPentry *entry);
 static PHYSFS_Io *ZIP_duplicate(PHYSFS_Io *io)
 {
     ZIPfileinfo *origfinfo = (ZIPfileinfo *) io->opaque;
-    PHYSFS_Io *retval = (PHYSFS_Io *) physfs_alloc.Malloc(sizeof (PHYSFS_Io));
-    ZIPfileinfo *finfo = (ZIPfileinfo *) physfs_alloc.Malloc(sizeof (ZIPfileinfo));
+    PHYSFS_Io *retval = (PHYSFS_Io *) allocator.Malloc(sizeof (PHYSFS_Io));
+    ZIPfileinfo *finfo = (ZIPfileinfo *) allocator.Malloc(sizeof (ZIPfileinfo));
     GOTO_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, failed);
     GOTO_IF(!finfo, PHYSFS_ERR_OUT_OF_MEMORY, failed);
     memset(finfo, '\0', sizeof (*finfo));
@@ -458,7 +458,7 @@ static PHYSFS_Io *ZIP_duplicate(PHYSFS_Io *io)
     initializeZStream(&finfo->stream);
     if (finfo->entry->compression_method != COMPMETH_NONE)
     {
-        finfo->buffer = (PHYSFS_uint8 *) physfs_alloc.Malloc(ZIP_READBUFSIZE);
+        finfo->buffer = (PHYSFS_uint8 *) allocator.Malloc(ZIP_READBUFSIZE);
         GOTO_IF(!finfo->buffer, PHYSFS_ERR_OUT_OF_MEMORY, failed);
         if (zlib_err(inflateInit2(&finfo->stream, -MAX_WBITS)) != Z_OK)
             goto failed;
@@ -476,15 +476,15 @@ failed:
 
         if (finfo->buffer != NULL)
         {
-            physfs_alloc.Free(finfo->buffer);
+            allocator.Free(finfo->buffer);
             inflateEnd(&finfo->stream);
         } /* if */
 
-        physfs_alloc.Free(finfo);
+        allocator.Free(finfo);
     } /* if */
 
     if (retval != NULL)
-        physfs_alloc.Free(retval);
+        allocator.Free(retval);
 
     return NULL;
 } /* ZIP_duplicate */
@@ -500,10 +500,10 @@ static void ZIP_destroy(PHYSFS_Io *io)
         inflateEnd(&finfo->stream);
 
     if (finfo->buffer != NULL)
-        physfs_alloc.Free(finfo->buffer);
+        allocator.Free(finfo->buffer);
 
-    physfs_alloc.Free(finfo);
-    physfs_alloc.Free(io);
+    allocator.Free(finfo);
+    allocator.Free(io);
 } /* ZIP_destroy */
 
 
@@ -1454,7 +1454,7 @@ static void ZIP_closeArchive(void *opaque)
 
     __PHYSFS_DirTreeDeinit(&info->tree);
 
-    physfs_alloc.Free(info);
+    allocator.Free(info);
 } /* ZIP_closeArchive */
 
 
@@ -1474,7 +1474,7 @@ static void *ZIP_openArchive(PHYSFS_Io *io, const char *name,
 
     *claimed = 1;
 
-    info = (ZIPinfo *) physfs_alloc.Malloc(sizeof (ZIPinfo));
+    info = (ZIPinfo *) allocator.Malloc(sizeof (ZIPinfo));
     BAIL_IF(!info, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     memset(info, '\0', sizeof (ZIPinfo));
 
@@ -1560,10 +1560,10 @@ static PHYSFS_Io *ZIP_openRead(void *opaque, const char *filename)
 
     BAIL_IF(entry->tree.isdir, PHYSFS_ERR_NOT_A_FILE, NULL);
 
-    retval = (PHYSFS_Io *) physfs_alloc.Malloc(sizeof (PHYSFS_Io));
+    retval = (PHYSFS_Io *) allocator.Malloc(sizeof (PHYSFS_Io));
     GOTO_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, ZIP_openRead_failed);
 
-    finfo = (ZIPfileinfo *) physfs_alloc.Malloc(sizeof (ZIPfileinfo));
+    finfo = (ZIPfileinfo *) allocator.Malloc(sizeof (ZIPfileinfo));
     GOTO_IF(!finfo, PHYSFS_ERR_OUT_OF_MEMORY, ZIP_openRead_failed);
     memset(finfo, '\0', sizeof (ZIPfileinfo));
 
@@ -1575,7 +1575,7 @@ static PHYSFS_Io *ZIP_openRead(void *opaque, const char *filename)
 
     if (finfo->entry->compression_method != COMPMETH_NONE)
     {
-        finfo->buffer = (PHYSFS_uint8 *) physfs_alloc.Malloc(ZIP_READBUFSIZE);
+        finfo->buffer = (PHYSFS_uint8 *) allocator.Malloc(ZIP_READBUFSIZE);
         if (!finfo->buffer)
             GOTO(PHYSFS_ERR_OUT_OF_MEMORY, ZIP_openRead_failed);
         else if (zlib_err(inflateInit2(&finfo->stream, -MAX_WBITS)) != Z_OK)
@@ -1607,15 +1607,15 @@ ZIP_openRead_failed:
 
         if (finfo->buffer != NULL)
         {
-            physfs_alloc.Free(finfo->buffer);
+            allocator.Free(finfo->buffer);
             inflateEnd(&finfo->stream);
         } /* if */
 
-        physfs_alloc.Free(finfo);
+        allocator.Free(finfo);
     } /* if */
 
     if (retval != NULL)
-        physfs_alloc.Free(retval);
+        allocator.Free(retval);
 
     return NULL;
 } /* ZIP_openRead */

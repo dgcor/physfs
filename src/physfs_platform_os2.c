@@ -114,7 +114,7 @@ static char *cvtUtf8ToCodepage(const char *utf8str)
         /* There's really not much we can do on older OS/2s except pray this
            is latin1-compatible. */
         size_t i;
-        cpptr = (char *) physfs_alloc.Malloc(unilen);
+        cpptr = (char *) allocator.Malloc(unilen);
         cpstr = cpptr;
         GOTO_IF(!cpptr, PHYSFS_ERR_OUT_OF_MEMORY, failed);
         for (i = 0; i < unilen; i++)
@@ -131,7 +131,7 @@ static char *cvtUtf8ToCodepage(const char *utf8str)
     {
         int rc;
         size_t cplen = unilen * 4; /* overallocate, just in case. */
-        cpptr = (char *) physfs_alloc.Malloc(cplen);
+        cpptr = (char *) allocator.Malloc(cplen);
         GOTO_IF(!cpptr, PHYSFS_ERR_OUT_OF_MEMORY, failed);
         cpstr = cpptr;
 
@@ -146,7 +146,7 @@ static char *cvtUtf8ToCodepage(const char *utf8str)
 
 failed:
     __PHYSFS_smallFree(uc2ptr);
-    physfs_alloc.Free(cpptr);
+    allocator.Free(cpptr);
 
     return NULL;
 } /* cvtUtf8ToCodepage */
@@ -154,7 +154,7 @@ failed:
 static char *cvtCodepageToUtf8(const char *cpstr)
 {
     const size_t len = strlen(cpstr) + 1;
-    char *retvalbuf = (char *) physfs_alloc.Malloc(len * 4);
+    char *retvalbuf = (char *) allocator.Malloc(len * 4);
     char *retval = NULL;
 
     BAIL_IF(!retvalbuf, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
@@ -235,7 +235,7 @@ static char *cvtPathToCorrectCase(char *buf)
                 else
                 {
                     cmp = PHYSFS_utf8stricmp(utf8, fname);
-                    physfs_alloc.Free(utf8);
+                    allocator.Free(utf8);
                 } /* else */
 
                 if (cmp == 0)
@@ -447,7 +447,7 @@ PHYSFS_EnumerateCallbackResult __PHYSFS_platformEnumerate(const char *dirname,
                       FILE_DIRECTORY | FILE_ARCHIVED |
                       FILE_READONLY | FILE_HIDDEN | FILE_SYSTEM,
                       &fb, sizeof (fb), &count, FIL_STANDARD);
-    physfs_alloc.Free(cpspec);
+    allocator.Free(cpspec);
 
     BAIL_IF(rc != NO_ERROR, errcodeFromAPIRET(rc), PHYSFS_ENUM_ERROR);
 
@@ -461,7 +461,7 @@ PHYSFS_EnumerateCallbackResult __PHYSFS_platformEnumerate(const char *dirname,
             else
             {
                 retval = callback(callbackdata, origdir, utf8);
-                physfs_alloc.Free(utf8);
+                allocator.Free(utf8);
                 if (retval == PHYSFS_ENUM_ERROR)
                     PHYSFS_setErrorCode(PHYSFS_ERR_APP_CALLBACK);
             } /* else */
@@ -512,10 +512,10 @@ char *__PHYSFS_platformCurrentDir(void)
     BAIL_IF_ERRPASS(utf8 == NULL, NULL);
 
     /* +4 for "x:\\" drive selector and null terminator. */
-    retval = (char *) physfs_alloc.Malloc(strlen(utf8) + 4);
+    retval = (char *) allocator.Malloc(strlen(utf8) + 4);
     if (retval == NULL)
     {
-        physfs_alloc.Free(utf8);
+        allocator.Free(utf8);
         BAIL(PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     } /* if */
 
@@ -524,7 +524,7 @@ char *__PHYSFS_platformCurrentDir(void)
     retval[2] = '\\';
     strcpy(retval + 3, utf8);
 
-    physfs_alloc.Free(utf8);
+    allocator.Free(utf8);
 
     return retval;
 } /* __PHYSFS_platformCurrentDir */
@@ -536,7 +536,7 @@ int __PHYSFS_platformMkDir(const char *filename)
     char *cpstr = cvtUtf8ToCodepage(filename);
     BAIL_IF_ERRPASS(!cpstr, 0);
     rc = DosCreateDir((unsigned char *) cpstr, NULL);
-    physfs_alloc.Free(cpstr);
+    allocator.Free(cpstr);
     BAIL_IF(rc != NO_ERROR, errcodeFromAPIRET(rc), 0);
     return 1;
 } /* __PHYSFS_platformMkDir */
@@ -552,7 +552,7 @@ static HFILE openFile(const char *filename, const ULONG flags, const ULONG mode)
     BAIL_IF_ERRPASS(!cpfname, 0);
 
     rc = DosOpen(cpfname, &hfile, &action, 0, FILE_NORMAL, flags, mode, NULL);
-    physfs_alloc.Free(cpfname);
+    allocator.Free(cpfname);
     BAIL_IF(rc != NO_ERROR, errcodeFromAPIRET(rc), 0);
 
     return hfile;
@@ -697,7 +697,7 @@ int __PHYSFS_platformDelete(const char *path)
     retval = 1;  /* success */
 
 done:
-    physfs_alloc.Free(cppath);
+    allocator.Free(cppath);
     return retval;
 } /* __PHYSFS_platformDelete */
 
@@ -760,7 +760,7 @@ int __PHYSFS_platformStat(const char *filename, PHYSFS_Stat *stat, const int fol
     return 1;  /* success */
 
 done:
-    physfs_alloc.Free(cpfname); 
+    allocator.Free(cpfname); 
     return retval;
 } /* __PHYSFS_platformStat */
 

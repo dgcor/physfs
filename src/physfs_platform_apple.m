@@ -34,7 +34,7 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0)
         NSString *path = [[NSBundle mainBundle] bundlePath];
         BAIL_IF(!path, PHYSFS_ERR_OS_ERROR, NULL);
         size_t len = [path lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
-        char *retval = (char *) physfs_alloc.Malloc(len + 2);
+        char *retval = (char *) allocator.Malloc(len + 2);
         BAIL_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
         [path getCString:retval maxLength:len+1 encoding:NSUTF8StringEncoding];
         retval[len] = '/';
@@ -54,7 +54,7 @@ char *__PHYSFS_platformCalcPrefDir(const char *org, const char *app)
         BAIL_IF(!path, PHYSFS_ERR_OS_ERROR, NULL);
         size_t len = [path lengthOfBytesUsingEncoding:NSUTF8StringEncoding];
         const size_t applen = strlen(app);
-        char *retval = (char *) physfs_alloc.Malloc(len + applen + 3);
+        char *retval = (char *) allocator.Malloc(len + applen + 3);
         BAIL_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
         [path getCString:retval maxLength:len+1 encoding:NSUTF8StringEncoding];
         snprintf(retval + len, applen + 3, "/%s/", app);

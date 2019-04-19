@@ -86,8 +86,8 @@ extern const PHYSFS_Archiver __PHYSFS_Archiver_7Z;
 extern const PHYSFS_Archiver __PHYSFS_Archiver_GRP;
 extern const PHYSFS_Archiver __PHYSFS_Archiver_QPAK;
 extern const PHYSFS_Archiver __PHYSFS_Archiver_HOG;
-extern const PHYSFS_Archiver __PHYSFS_Archiver_MPQ;
 extern const PHYSFS_Archiver __PHYSFS_Archiver_MVL;
+extern const PHYSFS_Archiver __PHYSFS_Archiver_MPQ;
 extern const PHYSFS_Archiver __PHYSFS_Archiver_WAD;
 extern const PHYSFS_Archiver __PHYSFS_Archiver_SLB;
 extern const PHYSFS_Archiver __PHYSFS_Archiver_ISO9660;
@@ -127,7 +127,7 @@ int __PHYSFS_ATOMIC_DECR(int *ptrval);
 /*
  * Interface for small allocations. If you need a little scratch space for
  *  a throwaway buffer or string, use this. It will make small allocations
- *  on the stack if possible, and use physfs_alloc.Malloc() if they are too
+ *  on the stack if possible, and use allocator.Malloc() if they are too
  *  large. This helps reduce malloc pressure.
  * There are some rules, though:
  * NEVER return a pointer from this, as stack-allocated buffers go away
@@ -163,35 +163,47 @@ void __PHYSFS_smallFree(void *ptr);
 #define free(x) Do not use free() directly.
 /* !!! FIXME: add alloca check here. */
 
+
+/* by default, enable things, so builds can opt out of a few things they
+   want to avoid. But you can build with this #defined to 0 if you would
+   like to turn off everything except a handful of things you opt into. */
+#ifndef PHYSFS_SUPPORTS_DEFAULT
+#define PHYSFS_SUPPORTS_DEFAULT 1
+#endif
+
+
 #ifndef PHYSFS_SUPPORTS_ZIP
-#define PHYSFS_SUPPORTS_ZIP 1
+#define PHYSFS_SUPPORTS_ZIP PHYSFS_SUPPORTS_DEFAULT
 #endif
 #ifndef PHYSFS_SUPPORTS_7Z
-#define PHYSFS_SUPPORTS_7Z 1
+#define PHYSFS_SUPPORTS_7Z PHYSFS_SUPPORTS_DEFAULT
 #endif
 #ifndef PHYSFS_SUPPORTS_GRP
-#define PHYSFS_SUPPORTS_GRP 1
+#define PHYSFS_SUPPORTS_GRP PHYSFS_SUPPORTS_DEFAULT
 #endif
 #ifndef PHYSFS_SUPPORTS_HOG
-#define PHYSFS_SUPPORTS_HOG 1
+#define PHYSFS_SUPPORTS_HOG PHYSFS_SUPPORTS_DEFAULT
 #endif
 #ifndef PHYSFS_SUPPORTS_MVL
-#define PHYSFS_SUPPORTS_MVL 1
+#define PHYSFS_SUPPORTS_MVL PHYSFS_SUPPORTS_DEFAULT
+#endif
+#ifndef PHYSFS_SUPPORTS_MPQ
+#define PHYSFS_SUPPORTS_MPQ PHYSFS_SUPPORTS_DEFAULT
 #endif
 #ifndef PHYSFS_SUPPORTS_WAD
-#define PHYSFS_SUPPORTS_WAD 1
+#define PHYSFS_SUPPORTS_WAD PHYSFS_SUPPORTS_DEFAULT
 #endif
 #ifndef PHYSFS_SUPPORTS_QPAK
-#define PHYSFS_SUPPORTS_QPAK 1
+#define PHYSFS_SUPPORTS_QPAK PHYSFS_SUPPORTS_DEFAULT
 #endif
 #ifndef PHYSFS_SUPPORTS_SLB
-#define PHYSFS_SUPPORTS_SLB 1
+#define PHYSFS_SUPPORTS_SLB PHYSFS_SUPPORTS_DEFAULT
 #endif
 #ifndef PHYSFS_SUPPORTS_ISO9660
-#define PHYSFS_SUPPORTS_ISO9660 1
+#define PHYSFS_SUPPORTS_ISO9660 PHYSFS_SUPPORTS_DEFAULT
 #endif
 #ifndef PHYSFS_SUPPORTS_VDF
-#define PHYSFS_SUPPORTS_VDF 1
+#define PHYSFS_SUPPORTS_VDF PHYSFS_SUPPORTS_DEFAULT
 #endif
 
 #if PHYSFS_SUPPORTS_7Z
@@ -313,7 +325,7 @@ PHYSFS_uint32 __PHYSFS_hashString(const char *str, size_t len);
 extern PHYSFS_Allocator __PHYSFS_AllocatorHooks;
 
 /* convenience macro to make this less cumbersome internally... */
-#define physfs_alloc __PHYSFS_AllocatorHooks
+#define allocator __PHYSFS_AllocatorHooks
 
 /*
  * Create a PHYSFS_Io for a file in the physical filesystem.
@@ -590,7 +602,7 @@ void __PHYSFS_platformDetectAvailableCDs(PHYSFS_StringCallback cb, void *data);
  *  Just return NULL if the standard routines will suffice. (see
  *  calculateBaseDir() in physfs.c ...)
  * Your string must end with a dir separator if you don't return NULL.
- *  Caller will physfs_alloc.Free() the retval if it's not NULL.
+ *  Caller will allocator.Free() the retval if it's not NULL.
  */
 char *__PHYSFS_platformCalcBaseDir(const char *argv0);
 
@@ -598,7 +610,7 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0);
  * Get the platform-specific user dir.
  * As of PhysicsFS 2.1, returning NULL means fatal error.
  * Your string must end with a dir separator if you don't return NULL.
- *  Caller will physfs_alloc.Free() the retval if it's not NULL.
+ *  Caller will allocator.Free() the retval if it's not NULL.
  */
 char *__PHYSFS_platformCalcUserDir(void);
 
@@ -611,7 +623,7 @@ const char *__PHYSFS_getUserDir(void);  /* not deprecated internal version. */
  * Get the platform-specific pref dir.
  * Returning NULL means fatal error.
  * Your string must end with a dir separator if you don't return NULL.
- *  Caller will physfs_alloc.Free() the retval if it's not NULL.
+ *  Caller will allocator.Free() the retval if it's not NULL.
  *  Caller will make missing directories if necessary; this just reports
  *   the final path.
  */

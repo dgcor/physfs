@@ -62,13 +62,13 @@ static PHYSFS_ErrorCode szipErrorCode(const SRes rc)
 
 static void *SZIP_ISzAlloc_Alloc(void *p, size_t size)
 {
-    return physfs_alloc.Malloc(size ? size : 1);
+    return allocator.Malloc(size ? size : 1);
 } /* SZIP_ISzAlloc_Alloc */
 
 static void SZIP_ISzAlloc_Free(void *p, void *address)
 {
     if (address)
-        physfs_alloc.Free(address);
+        allocator.Free(address);
 } /* SZIP_ISzAlloc_Free */
 
 static ISzAlloc SZIP_SzAlloc = {
@@ -207,7 +207,7 @@ static void SZIP_closeArchive(void *opaque)
             info->io->destroy(info->io);
         SzArEx_Free(&info->db, &SZIP_SzAlloc);
         __PHYSFS_DirTreeDeinit(&info->tree);
-        physfs_alloc.Free(info);
+        allocator.Free(info);
     } /* if */
 } /* SZIP_closeArchive */
 
@@ -230,7 +230,7 @@ static void *SZIP_openArchive(PHYSFS_Io *io, const char *name,
     *claimed = (memcmp(sig, wantedsig, 6) == 0);
     BAIL_IF_ERRPASS(!io->seek(io, pos), NULL);
 
-    info = (SZIPinfo *) physfs_alloc.Malloc(sizeof (SZIPinfo));
+    info = (SZIPinfo *) allocator.Malloc(sizeof (SZIPinfo));
     BAIL_IF(!info, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     memset(info, '\0', sizeof (*info));
 
@@ -289,14 +289,14 @@ static PHYSFS_Io *SZIP_openRead(void *opaque, const char *path)
     io->destroy(io);
     io = NULL;
 
-    buf = physfs_alloc.Malloc(outSizeProcessed);
+    buf = allocator.Malloc(outSizeProcessed);
     GOTO_IF(rc != SZ_OK, PHYSFS_ERR_OUT_OF_MEMORY, SZIP_openRead_failed);
     memcpy(buf, outBuffer + offset, outSizeProcessed);
 
     alloc->Free(alloc, outBuffer);
     outBuffer = NULL;
 
-    retval = __PHYSFS_createMemoryIo(buf, outSizeProcessed, physfs_alloc.Free);
+    retval = __PHYSFS_createMemoryIo(buf, outSizeProcessed, allocator.Free);
     GOTO_IF_ERRPASS(!retval, SZIP_openRead_failed);
 
     return retval;
@@ -306,7 +306,7 @@ SZIP_openRead_failed:
         io->destroy(io);
 
     if (buf)
-        physfs_alloc.Free(buf);
+        allocator.Free(buf);
 
     if (outBuffer)
         alloc->Free(alloc, outBuffer);

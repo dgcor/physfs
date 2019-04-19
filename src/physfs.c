@@ -93,7 +93,7 @@ static void *stateLock = NULL;     /* protects other PhysFS static state. */
 
 /* allocator ... */
 static int externalAllocator = 0;
-PHYSFS_Allocator physfs_alloc;
+PHYSFS_Allocator allocator;
 
 
 #ifdef PHYSFS_NEED_ATOMIC_OP_FALLBACK
@@ -177,9 +177,9 @@ static void nativeIo_destroy(PHYSFS_Io *io)
 {
     NativeIoInfo *info = (NativeIoInfo *) io->opaque;
     __PHYSFS_platformClose(info->handle);
-    physfs_alloc.Free((void *) info->path);
-    physfs_alloc.Free(info);
-    physfs_alloc.Free(io);
+    allocator.Free((void *) info->path);
+    allocator.Free(info);
+    allocator.Free(io);
 } /* nativeIo_destroy */
 
 static const PHYSFS_Io __PHYSFS_nativeIoInterface =
@@ -204,11 +204,11 @@ PHYSFS_Io *__PHYSFS_createNativeIo(const char *path, const int mode)
 
     assert((mode == 'r') || (mode == 'w') || (mode == 'a'));
 
-    io = (PHYSFS_Io *) physfs_alloc.Malloc(sizeof (PHYSFS_Io));
+    io = (PHYSFS_Io *) allocator.Malloc(sizeof (PHYSFS_Io));
     GOTO_IF(!io, PHYSFS_ERR_OUT_OF_MEMORY, createNativeIo_failed);
-    info = (NativeIoInfo *) physfs_alloc.Malloc(sizeof (NativeIoInfo));
+    info = (NativeIoInfo *) allocator.Malloc(sizeof (NativeIoInfo));
     GOTO_IF(!info, PHYSFS_ERR_OUT_OF_MEMORY, createNativeIo_failed);
-    pathdup = (char *) physfs_alloc.Malloc(strlen(path) + 1);
+    pathdup = (char *) allocator.Malloc(strlen(path) + 1);
     GOTO_IF(!pathdup, PHYSFS_ERR_OUT_OF_MEMORY, createNativeIo_failed);
 
     if (mode == 'r')
@@ -230,9 +230,9 @@ PHYSFS_Io *__PHYSFS_createNativeIo(const char *path, const int mode)
 
 createNativeIo_failed:
     if (handle != NULL) __PHYSFS_platformClose(handle);
-    if (pathdup != NULL) physfs_alloc.Free(pathdup);
-    if (info != NULL) physfs_alloc.Free(info);
-    if (io != NULL) physfs_alloc.Free(io);
+    if (pathdup != NULL) allocator.Free(pathdup);
+    if (info != NULL) allocator.Free(info);
+    if (io != NULL) allocator.Free(io);
     return NULL;
 } /* __PHYSFS_createNativeIo */
 
@@ -308,12 +308,12 @@ static PHYSFS_Io *memoryIo_duplicate(PHYSFS_Io *io)
 
     /* we're the parent. */
 
-    retval = (PHYSFS_Io *) physfs_alloc.Malloc(sizeof (PHYSFS_Io));
+    retval = (PHYSFS_Io *) allocator.Malloc(sizeof (PHYSFS_Io));
     BAIL_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
-    newinfo = (MemoryIoInfo *) physfs_alloc.Malloc(sizeof (MemoryIoInfo));
+    newinfo = (MemoryIoInfo *) allocator.Malloc(sizeof (MemoryIoInfo));
     if (!newinfo)
     {
-        physfs_alloc.Free(retval);
+        allocator.Free(retval);
         BAIL(PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     } /* if */
 
@@ -345,8 +345,8 @@ static void memoryIo_destroy(PHYSFS_Io *io)
         assert(info->len == ((MemoryIoInfo *) info->parent->opaque)->len);
         assert(info->refcount == 0);
         assert(info->destruct == NULL);
-        physfs_alloc.Free(info);
-        physfs_alloc.Free(io);
+        allocator.Free(info);
+        allocator.Free(io);
         parent->destroy(parent);  /* decrements refcount. */
         return;
     } /* if */
@@ -359,8 +359,8 @@ static void memoryIo_destroy(PHYSFS_Io *io)
         void (*destruct)(void *) = info->destruct;
         void *buf = (void *) info->buf;
         io->opaque = NULL;  /* kill this here in case of race. */
-        physfs_alloc.Free(info);
-        physfs_alloc.Free(io);
+        allocator.Free(info);
+        allocator.Free(io);
         if (destruct != NULL)
             destruct(buf);
     } /* if */
@@ -386,9 +386,9 @@ PHYSFS_Io *__PHYSFS_createMemoryIo(const void *buf, PHYSFS_uint64 len,
     PHYSFS_Io *io = NULL;
     MemoryIoInfo *info = NULL;
 
-    io = (PHYSFS_Io *) physfs_alloc.Malloc(sizeof (PHYSFS_Io));
+    io = (PHYSFS_Io *) allocator.Malloc(sizeof (PHYSFS_Io));
     GOTO_IF(!io, PHYSFS_ERR_OUT_OF_MEMORY, createMemoryIo_failed);
-    info = (MemoryIoInfo *) physfs_alloc.Malloc(sizeof (MemoryIoInfo));
+    info = (MemoryIoInfo *) allocator.Malloc(sizeof (MemoryIoInfo));
     GOTO_IF(!info, PHYSFS_ERR_OUT_OF_MEMORY, createMemoryIo_failed);
 
     memset(info, '\0', sizeof (*info));
@@ -404,8 +404,8 @@ PHYSFS_Io *__PHYSFS_createMemoryIo(const void *buf, PHYSFS_uint64 len,
     return io;
 
 createMemoryIo_failed:
-    if (info != NULL) physfs_alloc.Free(info);
-    if (io != NULL) physfs_alloc.Free(io);
+    if (info != NULL) allocator.Free(info);
+    if (io != NULL) allocator.Free(io);
     return NULL;
 } /* __PHYSFS_createMemoryIo */
 
@@ -445,19 +445,19 @@ static PHYSFS_Io *handleIo_duplicate(PHYSFS_Io *io)
      *  abstraction. We're allowed to: we're physfs.c!
      */
     FileHandle *origfh = (FileHandle *) io->opaque;
-    FileHandle *newfh = (FileHandle *) physfs_alloc.Malloc(sizeof (FileHandle));
+    FileHandle *newfh = (FileHandle *) allocator.Malloc(sizeof (FileHandle));
     PHYSFS_Io *retval = NULL;
 
     GOTO_IF(!newfh, PHYSFS_ERR_OUT_OF_MEMORY, handleIo_dupe_failed);
     memset(newfh, '\0', sizeof (*newfh));
 
-    retval = (PHYSFS_Io *) physfs_alloc.Malloc(sizeof (PHYSFS_Io));
+    retval = (PHYSFS_Io *) allocator.Malloc(sizeof (PHYSFS_Io));
     GOTO_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, handleIo_dupe_failed);
 
 #if 0  /* we don't buffer the duplicate, at least not at the moment. */
     if (origfh->buffer != NULL)
     {
-        newfh->buffer = (PHYSFS_uint8 *) physfs_alloc.Malloc(origfh->bufsize);
+        newfh->buffer = (PHYSFS_uint8 *) allocator.Malloc(origfh->bufsize);
         if (!newfh->buffer)
             GOTO(PHYSFS_ERR_OUT_OF_MEMORY, handleIo_dupe_failed);
         newfh->bufsize = origfh->bufsize;
@@ -491,8 +491,8 @@ handleIo_dupe_failed:
     if (newfh)
     {
         if (newfh->io != NULL) newfh->io->destroy(newfh->io);
-        if (newfh->buffer != NULL) physfs_alloc.Free(newfh->buffer);
-        physfs_alloc.Free(newfh);
+        if (newfh->buffer != NULL) allocator.Free(newfh->buffer);
+        allocator.Free(newfh);
     } /* if */
 
     return NULL;
@@ -507,7 +507,7 @@ static void handleIo_destroy(PHYSFS_Io *io)
 {
     if (io->opaque != NULL)
         PHYSFS_close((PHYSFS_File *) io->opaque);
-    physfs_alloc.Free(io);
+    allocator.Free(io);
 } /* handleIo_destroy */
 
 static const PHYSFS_Io __PHYSFS_handleIoInterface =
@@ -525,7 +525,7 @@ static const PHYSFS_Io __PHYSFS_handleIoInterface =
 
 static PHYSFS_Io *__PHYSFS_createHandleIo(PHYSFS_File *f)
 {
-    PHYSFS_Io *io = (PHYSFS_Io *) physfs_alloc.Malloc(sizeof (PHYSFS_Io));
+    PHYSFS_Io *io = (PHYSFS_Io *) allocator.Malloc(sizeof (PHYSFS_Io));
     BAIL_IF(!io, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     memcpy(io, &__PHYSFS_handleIoInterface, sizeof (*io));
     io->opaque = f;
@@ -551,8 +551,8 @@ static void enumStringListCallback(void *data, const char *str)
     if (pecd->errcode)
         return;
 
-    ptr = physfs_alloc.Realloc(pecd->list, (pecd->size + 2) * sizeof (char *));
-    newstr = (char *) physfs_alloc.Malloc(strlen(str) + 1);
+    ptr = allocator.Realloc(pecd->list, (pecd->size + 2) * sizeof (char *));
+    newstr = (char *) allocator.Malloc(strlen(str) + 1);
     if (ptr != NULL)
         pecd->list = (char **) ptr;
 
@@ -574,7 +574,7 @@ static char **doEnumStringList(void (*func)(PHYSFS_StringCallback, void *))
 {
     EnumStringListCallbackData ecd;
     memset(&ecd, '\0', sizeof (ecd));
-    ecd.list = (char **) physfs_alloc.Malloc(sizeof (char *));
+    ecd.list = (char **) allocator.Malloc(sizeof (char *));
     BAIL_IF(!ecd.list, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     func(enumStringListCallback, &ecd);
 
@@ -760,7 +760,7 @@ void PHYSFS_setErrorCode(PHYSFS_ErrorCode errcode)
     err = findErrorForCurrentThread();
     if (err == NULL)
     {
-        err = (ErrState *) physfs_alloc.Malloc(sizeof (ErrState));
+        err = (ErrState *) allocator.Malloc(sizeof (ErrState));
         if (err == NULL)
             return;   /* uhh...? */
 
@@ -797,7 +797,7 @@ static void freeErrorStates(void)
     for (i = errorStates; i != NULL; i = next)
     {
         next = i->next;
-        physfs_alloc.Free(i);
+        allocator.Free(i);
     } /* for */
 
     errorStates = NULL;
@@ -850,7 +850,7 @@ static DirHandle *tryOpenDir(PHYSFS_Io *io, const PHYSFS_Archiver *funcs,
     opaque = funcs->openArchive(io, d, forWriting, _claimed);
     if (opaque != NULL)
     {
-        retval = (DirHandle *) physfs_alloc.Malloc(sizeof (DirHandle));
+        retval = (DirHandle *) allocator.Malloc(sizeof (DirHandle));
         if (retval == NULL)
             funcs->closeArchive(opaque);
         else
@@ -1038,13 +1038,13 @@ static DirHandle *createDirHandle(PHYSFS_Io *io, const char *newDir,
     dirHandle = openDirectory(io, newDir, forWriting);
     GOTO_IF_ERRPASS(!dirHandle, badDirHandle);
 
-    dirHandle->dirName = (char *) physfs_alloc.Malloc(strlen(newDir) + 1);
+    dirHandle->dirName = (char *) allocator.Malloc(strlen(newDir) + 1);
     GOTO_IF(!dirHandle->dirName, PHYSFS_ERR_OUT_OF_MEMORY, badDirHandle);
     strcpy(dirHandle->dirName, newDir);
 
     if ((mountPoint != NULL) && (*mountPoint != '\0'))
     {
-        dirHandle->mountPoint = (char *)physfs_alloc.Malloc(strlen(mountPoint)+2);
+        dirHandle->mountPoint = (char *)allocator.Malloc(strlen(mountPoint)+2);
         if (!dirHandle->mountPoint)
             GOTO(PHYSFS_ERR_OUT_OF_MEMORY, badDirHandle);
         strcpy(dirHandle->mountPoint, mountPoint);
@@ -1058,9 +1058,9 @@ badDirHandle:
     if (dirHandle != NULL)
     {
         dirHandle->funcs->closeArchive(dirHandle->opaque);
-        physfs_alloc.Free(dirHandle->dirName);
-        physfs_alloc.Free(dirHandle->mountPoint);
-        physfs_alloc.Free(dirHandle);
+        allocator.Free(dirHandle->dirName);
+        allocator.Free(dirHandle->mountPoint);
+        allocator.Free(dirHandle);
     } /* if */
 
     __PHYSFS_smallFree(tmpmntpnt);
@@ -1080,9 +1080,9 @@ static int freeDirHandle(DirHandle *dh, FileHandle *openList)
         BAIL_IF(i->dirHandle == dh, PHYSFS_ERR_FILES_STILL_OPEN, 0);
 
     dh->funcs->closeArchive(dh->opaque);
-    physfs_alloc.Free(dh->dirName);
-    physfs_alloc.Free(dh->mountPoint);
-    physfs_alloc.Free(dh);
+    allocator.Free(dh->dirName);
+    allocator.Free(dh->mountPoint);
+    allocator.Free(dh);
     return 1;
 } /* freeDirHandle */
 
@@ -1105,7 +1105,7 @@ static char *calculateBaseDir(const char *argv0)
     if (ptr != NULL)
     {
         const size_t size = ((size_t) (ptr - argv0)) + 1;
-        retval = (char *) physfs_alloc.Malloc(size + 1);
+        retval = (char *) allocator.Malloc(size + 1);
         BAIL_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
         memcpy(retval, argv0, size);
         retval[size] = '\0';
@@ -1202,11 +1202,11 @@ int PHYSFS_init(const char *argv0)
     if (!externalAllocator)
         setDefaultAllocator();
 
-    if ((physfs_alloc.Init != NULL) && (!physfs_alloc.Init())) return 0;
+    if ((allocator.Init != NULL) && (!allocator.Init())) return 0;
 
     if (!__PHYSFS_platformInit())
     {
-        if (physfs_alloc.Deinit != NULL) physfs_alloc.Deinit();
+        if (allocator.Deinit != NULL) allocator.Deinit();
         return 0;
     } /* if */
 
@@ -1257,7 +1257,7 @@ static int closeFileHandleList(FileHandle **list)
         } /* if */
 
         io->destroy(io);
-        physfs_alloc.Free(i);
+        allocator.Free(i);
     } /* for */
 
     *list = NULL;
@@ -1310,11 +1310,11 @@ static int doDeregisterArchiver(const size_t idx)
     if (archiverInUse(arc, searchPath) || archiverInUse(arc, writeDir))
         BAIL(PHYSFS_ERR_FILES_STILL_OPEN, 0);
 
-    physfs_alloc.Free((void *) info->extension);
-    physfs_alloc.Free((void *) info->description);
-    physfs_alloc.Free((void *) info->author);
-    physfs_alloc.Free((void *) info->url);
-    physfs_alloc.Free((void *) arc);
+    allocator.Free((void *) info->extension);
+    allocator.Free((void *) info->description);
+    allocator.Free((void *) info->author);
+    allocator.Free((void *) info->url);
+    allocator.Free((void *) arc);
 
     memmove(&archiveInfo[idx], &archiveInfo[idx+1], len);
     memmove(&archivers[idx], &archivers[idx+1], len);
@@ -1335,8 +1335,8 @@ static void freeArchivers(void)
             assert(!"nothing should be mounted during shutdown.");
     } /* while */
 
-    physfs_alloc.Free(archivers);
-    physfs_alloc.Free(archiveInfo);
+    allocator.Free(archivers);
+    allocator.Free(archiveInfo);
     archivers = NULL;
     archiveInfo = NULL;
 } /* freeArchivers */
@@ -1353,31 +1353,31 @@ static int doDeinit(void)
 
     if (baseDir != NULL)
     {
-        physfs_alloc.Free(baseDir);
+        allocator.Free(baseDir);
         baseDir = NULL;
     } /* if */
 
     if (userDir != NULL)
     {
-        physfs_alloc.Free(userDir);
+        allocator.Free(userDir);
         userDir = NULL;
     } /* if */
 
     if (prefDir != NULL)
     {
-        physfs_alloc.Free(prefDir);
+        allocator.Free(prefDir);
         prefDir = NULL;
     } /* if */
 
     if (archiveInfo != NULL)
     {
-        physfs_alloc.Free(archiveInfo);
+        allocator.Free(archiveInfo);
         archiveInfo = NULL;
     } /* if */
 
     if (archivers != NULL)
     {
-        physfs_alloc.Free(archivers);
+        allocator.Free(archivers);
         archivers = NULL;
     } /* if */
 
@@ -1387,8 +1387,8 @@ static int doDeinit(void)
     if (errorLock) __PHYSFS_platformDestroyMutex(errorLock);
     if (stateLock) __PHYSFS_platformDestroyMutex(stateLock);
 
-    if (physfs_alloc.Deinit != NULL)
-        physfs_alloc.Deinit();
+    if (allocator.Deinit != NULL)
+        allocator.Deinit();
 
     errorLock = stateLock = NULL;
 
@@ -1413,7 +1413,7 @@ int PHYSFS_isInit(void)
 
 char *__PHYSFS_strdup(const char *str)
 {
-    char *retval = (char *) physfs_alloc.Malloc(strlen(str) + 1);
+    char *retval = (char *) allocator.Malloc(strlen(str) + 1);
     if (retval)
         strcpy(retval, str);
     return retval;
@@ -1464,7 +1464,7 @@ static int doRegisterArchiver(const PHYSFS_Archiver *_archiver)
     } /* for */
 
     /* make a copy of the data. */
-    archiver = (PHYSFS_Archiver *) physfs_alloc.Malloc(sizeof (*archiver));
+    archiver = (PHYSFS_Archiver *) allocator.Malloc(sizeof (*archiver));
     GOTO_IF(!archiver, PHYSFS_ERR_OUT_OF_MEMORY, regfailed);
 
     /* Must copy sizeof (OLD_VERSION_OF_STRUCT) when version changes! */
@@ -1482,11 +1482,11 @@ static int doRegisterArchiver(const PHYSFS_Archiver *_archiver)
     info->supportsSymlinks = _archiver->info.supportsSymlinks;
     #undef CPYSTR
 
-    ptr = physfs_alloc.Realloc(archiveInfo, len);
+    ptr = allocator.Realloc(archiveInfo, len);
     GOTO_IF(!ptr, PHYSFS_ERR_OUT_OF_MEMORY, regfailed);
     archiveInfo = (PHYSFS_ArchiveInfo **) ptr;
 
-    ptr = physfs_alloc.Realloc(archivers, len);
+    ptr = allocator.Realloc(archivers, len);
     GOTO_IF(!ptr, PHYSFS_ERR_OUT_OF_MEMORY, regfailed);
     archivers = (PHYSFS_Archiver **) ptr;
 
@@ -1503,12 +1503,12 @@ static int doRegisterArchiver(const PHYSFS_Archiver *_archiver)
 regfailed:
     if (info != NULL)
     {
-        physfs_alloc.Free((void *) info->extension);
-        physfs_alloc.Free((void *) info->description);
-        physfs_alloc.Free((void *) info->author);
-        physfs_alloc.Free((void *) info->url);
+        allocator.Free((void *) info->extension);
+        allocator.Free((void *) info->description);
+        allocator.Free((void *) info->author);
+        allocator.Free((void *) info->url);
     } /* if */
-    physfs_alloc.Free(archiver);
+    allocator.Free(archiver);
 
     return 0;
 } /* doRegisterArchiver */
@@ -1561,9 +1561,9 @@ void PHYSFS_freeList(void *list)
     if (list != NULL)
     {
         for (i = (void **) list; *i != NULL; i++)
-            physfs_alloc.Free(*i);
+            allocator.Free(*i);
 
-        physfs_alloc.Free(list);
+        allocator.Free(list);
     } /* if */
 } /* PHYSFS_freeList */
 
@@ -1600,7 +1600,7 @@ const char *PHYSFS_getPrefDir(const char *org, const char *app)
     BAIL_IF(!app, PHYSFS_ERR_INVALID_ARGUMENT, NULL);
     BAIL_IF(*app == '\0', PHYSFS_ERR_INVALID_ARGUMENT, NULL);
 
-    physfs_alloc.Free(prefDir);
+    allocator.Free(prefDir);
     prefDir = __PHYSFS_platformCalcPrefDir(org, app);
     BAIL_IF_ERRPASS(!prefDir, NULL);
 
@@ -1620,7 +1620,7 @@ const char *PHYSFS_getPrefDir(const char *org, const char *app)
 
         if (!__PHYSFS_platformMkDir(prefDir))
         {
-            physfs_alloc.Free(prefDir);
+            allocator.Free(prefDir);
             prefDir = NULL;
         } /* if */
     } /* if */
@@ -2278,15 +2278,15 @@ static PHYSFS_EnumerateCallbackResult enumFilesCallback(void *data,
     if (locateInStringList(str, pecd->list, &pos))
         return PHYSFS_ENUM_OK;  /* already in the list, but keep going. */
 
-    ptr = physfs_alloc.Realloc(pecd->list, (pecd->size + 2) * sizeof (char *));
-    newstr = (char *) physfs_alloc.Malloc(strlen(str) + 1);
+    ptr = allocator.Realloc(pecd->list, (pecd->size + 2) * sizeof (char *));
+    newstr = (char *) allocator.Malloc(strlen(str) + 1);
     if (ptr != NULL)
         pecd->list = (char **) ptr;
 
     if ((ptr == NULL) || (newstr == NULL))
     {
         if (newstr)
-            physfs_alloc.Free(newstr);
+            allocator.Free(newstr);
 
         pecd->errcode = PHYSFS_ERR_OUT_OF_MEMORY;
         return PHYSFS_ENUM_ERROR;  /* better luck next time. */
@@ -2311,15 +2311,15 @@ char **PHYSFS_enumerateFiles(const char *path)
 {
     EnumStringListCallbackData ecd;
     memset(&ecd, '\0', sizeof (ecd));
-    ecd.list = (char **) physfs_alloc.Malloc(sizeof (char *));
+    ecd.list = (char **) allocator.Malloc(sizeof (char *));
     BAIL_IF(!ecd.list, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     if (!PHYSFS_enumerate(path, enumFilesCallback, &ecd))
     {
         const PHYSFS_ErrorCode errcode = currentErrorCode();
         PHYSFS_uint32 i;
         for (i = 0; i < ecd.size; i++)
-            physfs_alloc.Free(ecd.list[i]);
-        physfs_alloc.Free(ecd.list);
+            allocator.Free(ecd.list[i]);
+        allocator.Free(ecd.list);
         BAIL_IF(errcode == PHYSFS_ERR_APP_CALLBACK, ecd.errcode, NULL);
         return NULL;
     } /* if */
@@ -2576,7 +2576,7 @@ static PHYSFS_File *doOpenWrite(const char *_fname, int appending)
 
         GOTO_IF_ERRPASS(!io, doOpenWriteEnd);
 
-        fh = (FileHandle *) physfs_alloc.Malloc(sizeof (FileHandle));
+        fh = (FileHandle *) allocator.Malloc(sizeof (FileHandle));
         if (fh == NULL)
         {
             io->destroy(io);
@@ -2645,7 +2645,7 @@ PHYSFS_File *PHYSFS_openRead(const char *_fname)
 
         GOTO_IF_ERRPASS(!io, openReadEnd);
 
-        fh = (FileHandle *) physfs_alloc.Malloc(sizeof (FileHandle));
+        fh = (FileHandle *) allocator.Malloc(sizeof (FileHandle));
         if (fh == NULL)
         {
             io->destroy(io);
@@ -2672,7 +2672,6 @@ static int closeHandleInOpenList(FileHandle **list, FileHandle *handle)
 {
     FileHandle *prev = NULL;
     FileHandle *i;
-    int rc = 1;
 
     for (i = *list; i != NULL; i = i->next)
     {
@@ -2680,20 +2679,30 @@ static int closeHandleInOpenList(FileHandle **list, FileHandle *handle)
         {
             PHYSFS_Io *io = handle->io;
             PHYSFS_uint8 *tmp = handle->buffer;
-            rc = PHYSFS_flush((PHYSFS_File *) handle);
-            if (!rc)
-                return -1;
+
+            /* send our buffer to io... */
+            if (!handle->forReading)
+            {
+                if (!PHYSFS_flush((PHYSFS_File *) handle))
+                    return -1;
+
+                /* ...then have io send it to the disk... */
+                else if (io->flush && !io->flush(io))
+                    return -1;
+            } /* if */
+
+            /* ...then close the underlying file. */
             io->destroy(io);
 
             if (tmp != NULL)  /* free any associated buffer. */
-                physfs_alloc.Free(tmp);
+                allocator.Free(tmp);
 
             if (prev == NULL)
                 *list = handle->next;
             else
                 prev->next = handle->next;
 
-            physfs_alloc.Free(handle);
+            allocator.Free(handle);
             return 1;
         } /* if */
         prev = i;
@@ -2947,7 +2956,7 @@ int PHYSFS_setBuffer(PHYSFS_File *handle, PHYSFS_uint64 _bufsize)
     {
         if (fh->buffer)
         {
-            physfs_alloc.Free(fh->buffer);
+            allocator.Free(fh->buffer);
             fh->buffer = NULL;
         } /* if */
     } /* if */
@@ -2955,7 +2964,7 @@ int PHYSFS_setBuffer(PHYSFS_File *handle, PHYSFS_uint64 _bufsize)
     else
     {
         PHYSFS_uint8 *newbuf;
-        newbuf = (PHYSFS_uint8 *) physfs_alloc.Realloc(fh->buffer, bufsize);
+        newbuf = (PHYSFS_uint8 *) allocator.Realloc(fh->buffer, bufsize);
         BAIL_IF(!newbuf, PHYSFS_ERR_OUT_OF_MEMORY, 0);
         fh->buffer = newbuf;
     } /* else */
@@ -2980,7 +2989,7 @@ int PHYSFS_flush(PHYSFS_File *handle)
     rc = io->write(io, fh->buffer + fh->bufpos, fh->buffill - fh->bufpos);
     BAIL_IF_ERRPASS(rc <= 0, 0);
     fh->bufpos = fh->buffill = 0;
-    return io->flush ? io->flush(io) : 1;
+    return 1;
 } /* PHYSFS_flush */
 
 
@@ -3054,7 +3063,7 @@ void *__PHYSFS_initSmallAlloc(void *ptr, const size_t len)
 {
     void *useHeap = ((ptr == NULL) ? ((void *) 1) : ((void *) 0));
     if (useHeap)  /* too large for stack allocation or alloca() failed. */
-        ptr = physfs_alloc.Malloc(len+sizeof (void *));
+        ptr = allocator.Malloc(len+sizeof (void *));
 
     if (ptr != NULL)
     {
@@ -3076,7 +3085,7 @@ void __PHYSFS_smallFree(void *ptr)
         void **block = ((void **) ptr) - 1;
         const int useHeap = (*block != NULL);
         if (useHeap)
-            physfs_alloc.Free(block);
+            allocator.Free(block);
         /*printf("%s free'd (%p).\n", useHeap ? "heap" : "stack", block);*/
     } /* if */
 } /* __PHYSFS_smallFree */
@@ -3087,7 +3096,7 @@ int PHYSFS_setAllocator(const PHYSFS_Allocator *a)
     BAIL_IF(initialized, PHYSFS_ERR_IS_INITIALIZED, 0);
     externalAllocator = (a != NULL);
     if (externalAllocator)
-        memcpy(&physfs_alloc, a, sizeof (PHYSFS_Allocator));
+        memcpy(&allocator, a, sizeof (PHYSFS_Allocator));
 
     return 1;
 } /* PHYSFS_setAllocator */
@@ -3096,7 +3105,7 @@ int PHYSFS_setAllocator(const PHYSFS_Allocator *a)
 const PHYSFS_Allocator *PHYSFS_getAllocator(void)
 {
     BAIL_IF(!initialized, PHYSFS_ERR_NOT_INITIALIZED, NULL);
-    return &physfs_alloc;
+    return &allocator;
 } /* PHYSFS_getAllocator */
 
 
@@ -3128,11 +3137,11 @@ static void mallocAllocatorFree(void *ptr)
 static void setDefaultAllocator(void)
 {
     assert(!externalAllocator);
-    physfs_alloc.Init = NULL;
-    physfs_alloc.Deinit = NULL;
-    physfs_alloc.Malloc = mallocAllocatorMalloc;
-    physfs_alloc.Realloc = mallocAllocatorRealloc;
-    physfs_alloc.Free = mallocAllocatorFree;
+    allocator.Init = NULL;
+    allocator.Deinit = NULL;
+    allocator.Malloc = mallocAllocatorMalloc;
+    allocator.Realloc = mallocAllocatorRealloc;
+    allocator.Free = mallocAllocatorFree;
 } /* setDefaultAllocator */
 
 
@@ -3145,7 +3154,7 @@ int __PHYSFS_DirTreeInit(__PHYSFS_DirTree *dt, const size_t entrylen)
 
     memset(dt, '\0', sizeof (*dt));
 
-    dt->root = (__PHYSFS_DirTreeEntry *) physfs_alloc.Malloc(entrylen);
+    dt->root = (__PHYSFS_DirTreeEntry *) allocator.Malloc(entrylen);
     BAIL_IF(!dt->root, PHYSFS_ERR_OUT_OF_MEMORY, 0);
     memset(dt->root, '\0', entrylen);
     dt->root->name = rootpath;
@@ -3156,7 +3165,7 @@ int __PHYSFS_DirTreeInit(__PHYSFS_DirTree *dt, const size_t entrylen)
     dt->entrylen = entrylen;
 
     alloclen = dt->hashBuckets * sizeof (__PHYSFS_DirTreeEntry *);
-    dt->hash = (__PHYSFS_DirTreeEntry **) physfs_alloc.Malloc(alloclen);
+    dt->hash = (__PHYSFS_DirTreeEntry **) allocator.Malloc(alloclen);
     BAIL_IF(!dt->hash, PHYSFS_ERR_OUT_OF_MEMORY, 0);
     memset(dt->hash, '\0', alloclen);
 
@@ -3207,7 +3216,7 @@ void *__PHYSFS_DirTreeAdd(__PHYSFS_DirTree *dt, char *name, const int isdir)
         __PHYSFS_DirTreeEntry *parent = addAncestors(dt, name);
         BAIL_IF_ERRPASS(!parent, NULL);
         assert(dt->entrylen >= sizeof (__PHYSFS_DirTreeEntry));
-        retval = (__PHYSFS_DirTreeEntry *) physfs_alloc.Malloc(alloclen);
+        retval = (__PHYSFS_DirTreeEntry *) allocator.Malloc(alloclen);
         BAIL_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
         memset(retval, '\0', dt->entrylen);
         retval->name = ((char *) retval) + dt->entrylen;
@@ -3288,7 +3297,7 @@ void __PHYSFS_DirTreeDeinit(__PHYSFS_DirTree *dt)
     {
         assert(dt->root->sibling == NULL);
         assert(dt->hash || (dt->root->children == NULL));
-        physfs_alloc.Free(dt->root);
+        allocator.Free(dt->root);
     } /* if */
 
     if (dt->hash)
@@ -3301,10 +3310,10 @@ void __PHYSFS_DirTreeDeinit(__PHYSFS_DirTree *dt)
             for (entry = dt->hash[i]; entry; entry = next)
             {
                 next = entry->hashnext;
-                physfs_alloc.Free(entry);
+                allocator.Free(entry);
             } /* for */
         } /* for */
-        physfs_alloc.Free(dt->hash);
+        allocator.Free(dt->hash);
     } /* if */
 } /* __PHYSFS_DirTreeDeinit */
 

@@ -49,7 +49,7 @@ void UNPK_closeArchive(void *opaque)
         if (info->io)
             info->io->destroy(info->io);
 
-        physfs_alloc.Free(info);
+        allocator.Free(info);
     } /* if */
 } /* UNPK_closeArchive */
 
@@ -119,8 +119,8 @@ static PHYSFS_Io *UNPK_duplicate(PHYSFS_Io *_io)
 {
     UNPKfileinfo *origfinfo = (UNPKfileinfo *) _io->opaque;
     PHYSFS_Io *io = NULL;
-    PHYSFS_Io *retval = (PHYSFS_Io *) physfs_alloc.Malloc(sizeof (PHYSFS_Io));
-    UNPKfileinfo *finfo = (UNPKfileinfo *) physfs_alloc.Malloc(sizeof (UNPKfileinfo));
+    PHYSFS_Io *retval = (PHYSFS_Io *) allocator.Malloc(sizeof (PHYSFS_Io));
+    UNPKfileinfo *finfo = (UNPKfileinfo *) allocator.Malloc(sizeof (UNPKfileinfo));
     GOTO_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, UNPK_duplicate_failed);
     GOTO_IF(!finfo, PHYSFS_ERR_OUT_OF_MEMORY, UNPK_duplicate_failed);
 
@@ -134,8 +134,8 @@ static PHYSFS_Io *UNPK_duplicate(PHYSFS_Io *_io)
     return retval;
 
 UNPK_duplicate_failed:
-    if (finfo != NULL) physfs_alloc.Free(finfo);
-    if (retval != NULL) physfs_alloc.Free(retval);
+    if (finfo != NULL) allocator.Free(finfo);
+    if (retval != NULL) allocator.Free(retval);
     if (io != NULL) io->destroy(io);
     return NULL;
 } /* UNPK_duplicate */
@@ -146,8 +146,8 @@ static void UNPK_destroy(PHYSFS_Io *io)
 {
     UNPKfileinfo *finfo = (UNPKfileinfo *) io->opaque;
     finfo->io->destroy(finfo->io);
-    physfs_alloc.Free(finfo);
-    physfs_alloc.Free(io);
+    allocator.Free(finfo);
+    allocator.Free(io);
 } /* UNPK_destroy */
 
 
@@ -181,10 +181,10 @@ PHYSFS_Io *UNPK_openRead(void *opaque, const char *name)
     BAIL_IF_ERRPASS(!entry, NULL);
     BAIL_IF(entry->tree.isdir, PHYSFS_ERR_NOT_A_FILE, NULL);
 
-    retval = (PHYSFS_Io *) physfs_alloc.Malloc(sizeof (PHYSFS_Io));
+    retval = (PHYSFS_Io *) allocator.Malloc(sizeof (PHYSFS_Io));
     GOTO_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, UNPK_openRead_failed);
 
-    finfo = (UNPKfileinfo *) physfs_alloc.Malloc(sizeof (UNPKfileinfo));
+    finfo = (UNPKfileinfo *) allocator.Malloc(sizeof (UNPKfileinfo));
     GOTO_IF(!finfo, PHYSFS_ERR_OUT_OF_MEMORY, UNPK_openRead_failed);
 
     finfo->io = info->io->duplicate(info->io);
@@ -205,11 +205,11 @@ UNPK_openRead_failed:
     {
         if (finfo->io != NULL)
             finfo->io->destroy(finfo->io);
-        physfs_alloc.Free(finfo);
+        allocator.Free(finfo);
     } /* if */
 
     if (retval != NULL)
-        physfs_alloc.Free(retval);
+        allocator.Free(retval);
 
     return NULL;
 } /* UNPK_openRead */
@@ -287,12 +287,12 @@ void *UNPK_addEntry(void *opaque, char *name, const int isdir,
 
 void *UNPK_openArchive(PHYSFS_Io *io)
 {
-    UNPKinfo *info = (UNPKinfo *) physfs_alloc.Malloc(sizeof (UNPKinfo));
+    UNPKinfo *info = (UNPKinfo *) allocator.Malloc(sizeof (UNPKinfo));
     BAIL_IF(!info, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
 
     if (!__PHYSFS_DirTreeInit(&info->tree, sizeof (UNPKentry)))
     {
-        physfs_alloc.Free(info);
+        allocator.Free(info);
         return NULL;
     } /* if */
 

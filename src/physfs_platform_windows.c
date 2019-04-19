@@ -36,6 +36,10 @@
 #include <ctype.h>
 #include <time.h>
 
+#ifdef allocator  /* apparently Windows 10 SDK conflicts here. */
+#undef allocator
+#endif
+
 #include "physfs_internal.h"
 
 /*
@@ -80,10 +84,10 @@ static char *unicodeToUtf8Heap(const WCHAR *w_str)
     {
         void *ptr = NULL;
         const PHYSFS_uint64 len = (wStrLen(w_str) * 4) + 1;
-        retval = physfs_alloc.Malloc(len);
+        retval = allocator.Malloc(len);
         BAIL_IF(!retval, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
         PHYSFS_utf8FromUtf16((const PHYSFS_uint16 *) w_str, retval, len);
-        ptr = physfs_alloc.Realloc(retval, strlen(retval) + 1); /* shrink. */
+        ptr = allocator.Realloc(retval, strlen(retval) + 1); /* shrink. */
         if (ptr != NULL)
             retval = (char *) ptr;
     } /* if */
@@ -427,10 +431,10 @@ static char *calcDirAppendSep(const WCHAR *wdir)
     retval = unicodeToUtf8Heap(wdir);
     BAIL_IF_ERRPASS(!retval, NULL);
     len = strlen(retval);
-    ptr = physfs_alloc.Realloc(retval, len + 2);
+    ptr = allocator.Realloc(retval, len + 2);
     if (!ptr)
     {
-        physfs_alloc.Free(retval);
+        allocator.Free(retval);
         BAIL(PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     } /* if */
     retval = (char *) ptr;
@@ -454,9 +458,9 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0)
         DWORD rc;
         void *ptr;
 
-        if ( (ptr = physfs_alloc.Realloc(modpath, buflen*sizeof(WCHAR))) == NULL )
+        if ( (ptr = allocator.Realloc(modpath, buflen*sizeof(WCHAR))) == NULL )
         {
-            physfs_alloc.Free(modpath);
+            allocator.Free(modpath);
             BAIL(PHYSFS_ERR_OUT_OF_MEMORY, NULL);
         } /* if */
         modpath = (LPWSTR) ptr;
@@ -464,7 +468,7 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0)
         rc = GetModuleFileNameW(NULL, modpath, buflen);
         if (rc == 0)
         {
-            physfs_alloc.Free(modpath);
+            allocator.Free(modpath);
             BAIL(errcodeFromWinApi(), NULL);
         } /* if */
 
@@ -495,7 +499,7 @@ char *__PHYSFS_platformCalcBaseDir(const char *argv0)
             retval = unicodeToUtf8Heap(modpath);
         } /* else */
     } /* else */
-    physfs_alloc.Free(modpath);
+    allocator.Free(modpath);
 
     return retval;   /* w00t. */
 #endif
@@ -527,15 +531,15 @@ char *__PHYSFS_platformCalcPrefDir(const char *org, const char *app)
     utf8 = unicodeToUtf8Heap(path);
     BAIL_IF_ERRPASS(!utf8, NULL);
     len = strlen(utf8) + strlen(org) + strlen(app) + 4;
-    retval = physfs_alloc.Malloc(len);
+    retval = allocator.Malloc(len);
     if (!retval)
     {
-        physfs_alloc.Free(utf8);
+        allocator.Free(utf8);
         BAIL(PHYSFS_ERR_OUT_OF_MEMORY, NULL);
     } /* if */
 
     snprintf(retval, len, "%s\\%s\\%s\\", utf8, org, app);
-    physfs_alloc.Free(utf8);
+    allocator.Free(utf8);
     return retval;
 #endif
 } /* __PHYSFS_platformCalcPrefDir */
@@ -561,17 +565,26 @@ char *__PHYSFS_platformCalcUserDir(void)
         GOTO(errcodeFromWinApi(), done);
     else
     {
-        DWORD psize = 1;
-        LPWSTR wstr = L"";
+        DWORD psize = 0;
+        LPWSTR wstr = NULL;
         BOOL rc = 0;
 
         /*
          * Should fail. Will write the size of the profile path in
          *  psize. Also note that the second parameter can't be
-         *  NULL or the function fails.
+         *  NULL or the function fails on Windows XP, but has to be NULL on
+         *  Windows 10 or it will fail.  :(
          */
         rc = pGetDir(accessToken, NULL, &psize);
         GOTO_IF(rc, PHYSFS_ERR_OS_ERROR, done);  /* should have failed! */
+
+        if (psize == 0)  /* probably on Windows XP, try a different way. */
+        {
+            WCHAR x = 0;
+            rc = pGetDir(accessToken, &x, &psize);
+            GOTO_IF(rc, PHYSFS_ERR_OS_ERROR, done);  /* should have failed! */
+            GOTO_IF(!psize, PHYSFS_ERR_OS_ERROR, done);  /* Uhoh... */
+        } /* if */
 
         /* Allocate memory for the profile directory */
         wstr = (LPWSTR) __PHYSFS_smallAlloc((psize + 1) * sizeof (WCHAR));
@@ -671,7 +684,7 @@ PHYSFS_EnumerateCallbackResult __PHYSFS_platformEnumerate(const char *dirname,
         else
         {
             retval = callback(callbackdata, origdir, utf8);
-            physfs_alloc.Free(utf8);
+            allocator.Free(utf8);
             if (retval == PHYSFS_ENUM_ERROR)
                 PHYSFS_setErrorCode(PHYSFS_ERR_APP_CALLBACK);
         } /* else */
@@ -864,12 +877,12 @@ int __PHYSFS_platformDelete(const char *path)
 void *__PHYSFS_platformCreateMutex(void)
 {
     LPCRITICAL_SECTION lpcs;
-    lpcs = (LPCRITICAL_SECTION) physfs_alloc.Malloc(sizeof (CRITICAL_SECTION));
+    lpcs = (LPCRITICAL_SECTION) allocator.Malloc(sizeof (CRITICAL_SECTION));
     BAIL_IF(!lpcs, PHYSFS_ERR_OUT_OF_MEMORY, NULL);
 
     if (!winInitializeCriticalSection(lpcs))
     {
-        physfs_alloc.Free(lpcs);
+        allocator.Free(lpcs);
         BAIL(errcodeFromWinApi(), NULL);
     } /* if */
 
@@ -880,7 +893,7 @@ void *__PHYSFS_platformCreateMutex(void)
 void __PHYSFS_platformDestroyMutex(void *mutex)
 {
     DeleteCriticalSection((LPCRITICAL_SECTION) mutex);
-    physfs_alloc.Free(mutex);
+    allocator.Free(mutex);
 } /* __PHYSFS_platformDestroyMutex */
 
 
