@@ -9,10 +9,10 @@
 #  compile, using preprocessor checks for platform-specific bits instead of
 #  testing in here.
 
-cmake_minimum_required(VERSION 2.8.4)
+cmake_minimum_required(VERSION 2.8.12)
 
 project(PhysicsFS)
-set(PHYSFS_VERSION 3.0.2)
+set(PHYSFS_VERSION 3.1.0)
 
 # Increment this if/when we break backwards compatibility.
 set(PHYSFS_SOVERSION 1)
@@ -142,13 +142,17 @@ endif()
 
 option(PHYSFS_ARCHIVE_MPQ "Enable Diablo MPQ support" TRUE)
 option(PHYSFS_USE_EXTERNAL_STORMLIB "Use external StormLib for MPQ support" FALSE)
+option(PHYSFS_USE_EXTERNAL_STORMDLL "Use external Storm.dll if found" FALSE)
 if(NOT PHYSFS_ARCHIVE_MPQ)
-    add_definitions(-DPHYSFS_SUPPORTS_HOG=0)
+    add_definitions(-DPHYSFS_SUPPORTS_MPQ=0)
 else()
     if(PHYSFS_USE_EXTERNAL_STORMLIB)
         add_definitions(-DPHYSFS_USE_EXTERNAL_STORMLIB=1)
     else()
         set(PHYSFS_SRCS ${PHYSFS_SRCS} ${STORMLIB_SRCS})
+        if(PHYSFS_USE_EXTERNAL_STORMDLL)
+            add_definitions(-DPHYSFS_USE_EXTERNAL_STORMDLL=1)
+        endif()
     endif()
 endif()
 
@@ -193,6 +197,10 @@ if(PHYSFS_BUILD_STATIC)
 		set_target_properties(physfs-static PROPERTIES VS_WINRT_COMPONENT True)
         set_target_properties(physfs-static PROPERTIES STATIC_LIBRARY_FLAGS "/ignore:4264")
     endif()
+    if(WINDOWS AND NOT MSVC AND PHYSFS_ARCHIVE_MPQ AND NOT PHYSFS_USE_EXTERNAL_STORMLIB)
+        set(LIBS WinINet)
+        target_link_libraries(physfs-static ${LIBS})
+    endif()
 
     set(PHYSFS_LIB_TARGET physfs-static)
     set(PHYSFS_INSTALL_TARGETS ${PHYSFS_INSTALL_TARGETS} ";physfs-static")
@@ -208,6 +216,10 @@ if(PHYSFS_BUILD_SHARED)
 		set_target_properties(physfs PROPERTIES VS_WINRT_COMPONENT True)
     endif()
     target_link_libraries(physfs ${OPTIONAL_LIBRARY_LIBS} ${OTHER_LDFLAGS})
+    if(WINDOWS AND NOT MSVC AND PHYSFS_ARCHIVE_MPQ AND NOT PHYSFS_USE_EXTERNAL_STORMLIB)
+        set(LIBS WinINet)
+        target_link_libraries(physfs ${LIBS})
+    endif()
     set(PHYSFS_LIB_TARGET physfs)
     set(PHYSFS_INSTALL_TARGETS ${PHYSFS_INSTALL_TARGETS} ";physfs")
 endif()
@@ -243,11 +255,18 @@ if(PHYSFS_BUILD_TEST)
     set(PHYSFS_INSTALL_TARGETS ${PHYSFS_INSTALL_TARGETS} ";test_physfs")
 endif()
 
-install(TARGETS ${PHYSFS_INSTALL_TARGETS}
+install(TARGETS ${PHYSFS_INSTALL_TARGETS} EXPORT PhysFSExport
         RUNTIME DESTINATION bin
         LIBRARY DESTINATION lib${LIB_SUFFIX}
-        ARCHIVE DESTINATION lib${LIB_SUFFIX})
+        ARCHIVE DESTINATION lib${LIB_SUFFIX}
+        INCLUDES DESTINATION include)
 install(FILES src/physfs.h DESTINATION include)
+
+install(EXPORT PhysFSExport
+        DESTINATION "lib${LIB_SUFFIX}/cmake/PhysFS"
+        FILE PhysFSConfig.cmake
+)
+
 
 find_package(Doxygen)
 if(DOXYGEN_FOUND)

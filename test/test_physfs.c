@@ -31,8 +31,8 @@
 #include "physfs.h"
 
 #define TEST_VERSION_MAJOR  3
-#define TEST_VERSION_MINOR  0
-#define TEST_VERSION_PATCH  2
+#define TEST_VERSION_MINOR  1
+#define TEST_VERSION_PATCH  0
 
 static FILE *history_file = NULL;
 static PHYSFS_uint32 do_buffer_size = 0;
@@ -287,6 +287,53 @@ static int cmd_getmountpoint(char *args)
     printf("Dir [%s] is mounted at [%s].\n", args, PHYSFS_getMountPoint(args));
     return 1;
 } /* cmd_getmountpoint */
+
+
+static int cmd_setroot(char *args)
+{
+    char *archive;
+    char *subdir;
+    char *ptr;
+
+    archive = args;
+    if (*archive == '\"')
+    {
+        archive++;
+        ptr = strchr(archive, '\"');
+        if (ptr == NULL)
+        {
+            printf("missing string terminator in argument.\n");
+            return 1;
+        } /* if */
+        *(ptr) = '\0';
+    } /* if */
+    else
+    {
+        ptr = strchr(archive, ' ');
+        *ptr = '\0';
+    } /* else */
+
+    subdir = ptr + 1;
+    if (*subdir == '\"')
+    {
+        subdir++;
+        ptr = strchr(subdir, '\"');
+        if (ptr == NULL)
+        {
+            printf("missing string terminator in argument.\n");
+            return 1;
+        } /* if */
+        *(ptr) = '\0';
+    } /* if */
+
+    if (PHYSFS_setRoot(archive, subdir))
+        printf("Successful.\n");
+    else
+        printf("Failure. reason: %s.\n", PHYSFS_getLastError());
+
+    return 1;
+} /* cmd_setroot */
+
 
 static int cmd_removearchive(char *args)
 {
@@ -1340,6 +1387,7 @@ static const command_info commands[] =
     { "stressbuffer",   cmd_stressbuffer,   1, "<bufferSize>"               },
     { "crc32",          cmd_crc32,          1, "<fileToHash>"               },
     { "getmountpoint",  cmd_getmountpoint,  1, "<dir>"                      },
+    { "setroot",        cmd_setroot,        2, "<archiveLocation> <root>"   },
     { NULL,             NULL,              -1, NULL                         }
 };
 

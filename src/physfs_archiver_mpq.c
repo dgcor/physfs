@@ -17,6 +17,24 @@
 #include "StormLib/StormLib.h"
 #endif
 
+typedef bool (WINAPI* StormFileOpenArchive)(const TCHAR*, DWORD, DWORD, HANDLE*);
+typedef bool (WINAPI* StormFileCloseArchive)(HANDLE);
+typedef bool (WINAPI* StormFileOpenFileEx)(HANDLE, const char*, DWORD, HANDLE*);
+typedef DWORD (WINAPI* StormFileGetFileSize)(HANDLE, LPDWORD);
+typedef DWORD (WINAPI* StormFileSetFilePointer)(HANDLE, LONG, LONG*, DWORD);
+typedef bool (WINAPI* StormFileReadFile)(HANDLE, void*, DWORD, LPDWORD, LPOVERLAPPED);
+typedef bool (WINAPI* StormFileCloseFile)(HANDLE);
+typedef bool (WINAPI* StormFileGetFileInfo)(HANDLE, SFileInfoClass, void*, DWORD, LPDWORD);
+
+StormFileOpenArchive PHYSFS_SFileOpenArchive = SFileOpenArchive;
+StormFileCloseArchive PHYSFS_SFileCloseArchive = SFileCloseArchive;
+StormFileOpenFileEx PHYSFS_SFileOpenFileEx = SFileOpenFileEx;
+StormFileGetFileSize PHYSFS_SFileGetFileSize = SFileGetFileSize;
+StormFileSetFilePointer PHYSFS_SFileSetFilePointer = SFileSetFilePointer;
+StormFileReadFile PHYSFS_SFileReadFile = SFileReadFile;
+StormFileCloseFile PHYSFS_SFileCloseFile = SFileCloseFile;
+StormFileGetFileInfo PHYSFS_SFileGetFileInfo = SFileGetFileInfo;
+
 #ifdef allocator
 #undef allocator
 #endif
@@ -45,7 +63,7 @@ static PHYSFS_sint64 MPQ_read(PHYSFS_Io *io, void *buf, PHYSFS_uint64 len)
     else
         dwBytesToRead = (DWORD)handle->size;
 
-    SFileReadFile(handle->fileHandle, buf, dwBytesToRead, &dwBytesRead, NULL);
+    PHYSFS_SFileReadFile(handle->fileHandle, buf, dwBytesToRead, &dwBytesRead, NULL);
     if (dwBytesRead != dwBytesToRead)
         return -1L;
 
@@ -62,7 +80,7 @@ static PHYSFS_sint64 MPQ_tell(PHYSFS_Io *io)
     MPQFileHandle *handle = (MPQFileHandle*)io->opaque;
     LONG FilePosHi = 0;
     DWORD FilePosLo;
-    FilePosLo = SFileSetFilePointer(handle->fileHandle, 0, &FilePosHi, FILE_CURRENT);
+    FilePosLo = PHYSFS_SFileSetFilePointer(handle->fileHandle, 0, &FilePosHi, FILE_CURRENT);
     return (((PHYSFS_sint64)FilePosHi << 32) | (PHYSFS_sint64)FilePosLo);
 }
 
@@ -71,7 +89,7 @@ static int MPQ_seek(PHYSFS_Io *io, PHYSFS_uint64 offset)
     MPQFileHandle *handle = (MPQFileHandle*)io->opaque;
     LONG DeltaPosHi = (LONG)(offset >> 32);
     LONG DeltaPosLo = (LONG)(offset);
-    SFileSetFilePointer(handle->fileHandle, DeltaPosLo, &DeltaPosHi, FILE_BEGIN);
+    PHYSFS_SFileSetFilePointer(handle->fileHandle, DeltaPosLo, &DeltaPosHi, FILE_BEGIN);
     return 1;
 }
 
@@ -99,7 +117,7 @@ static void MPQ_destroy(PHYSFS_Io *io)
     {
         if (handle->fileHandle != NULL)
         {
-            SFileCloseFile(handle->fileHandle);
+            PHYSFS_SFileCloseFile(handle->fileHandle);
         }
         allocator.Free(handle);
     }
@@ -119,6 +137,53 @@ static const PHYSFS_Io MPQ_Io =
     MPQ_destroy
 };
 
+#if PHYSFS_USE_EXTERNAL_STORMDLL && defined(_WIN32)
+static void MPQ_LoadExternalStormLib()
+{
+    static bool tryLoadOnce = false;
+    HINSTANCE hStormDLL = NULL;
+
+    if (tryLoadOnce)
+        return;
+    else
+        tryLoadOnce = true;
+
+    tryLoadOnce = true;
+
+    hStormDLL = LoadLibraryA("StormLib.dll");
+    if (!hStormDLL)
+        return;
+
+    PHYSFS_SFileOpenArchive = (StormFileOpenArchive)GetProcAddress(hStormDLL, "SFileOpenArchive");
+    PHYSFS_SFileCloseArchive = (StormFileCloseArchive)GetProcAddress(hStormDLL, "SFileCloseArchive");
+    PHYSFS_SFileOpenFileEx = (StormFileOpenFileEx)GetProcAddress(hStormDLL, "SFileOpenFileEx");
+    PHYSFS_SFileGetFileSize = (StormFileGetFileSize)GetProcAddress(hStormDLL, "SFileGetFileSize");
+    PHYSFS_SFileSetFilePointer = (StormFileSetFilePointer)GetProcAddress(hStormDLL, "SFileSetFilePointer");
+    PHYSFS_SFileReadFile = (StormFileReadFile)GetProcAddress(hStormDLL, "SFileReadFile");
+    PHYSFS_SFileCloseFile = (StormFileCloseFile)GetProcAddress(hStormDLL, "SFileCloseFile");
+    PHYSFS_SFileGetFileInfo = (StormFileGetFileInfo)GetProcAddress(hStormDLL, "SFileGetFileInfo");
+
+    if (!PHYSFS_SFileOpenArchive ||
+        !PHYSFS_SFileCloseArchive ||
+        !PHYSFS_SFileOpenFileEx ||
+        !PHYSFS_SFileGetFileSize ||
+        !PHYSFS_SFileSetFilePointer ||
+        !PHYSFS_SFileReadFile ||
+        !PHYSFS_SFileCloseFile ||
+        !PHYSFS_SFileGetFileInfo)
+    {
+        PHYSFS_SFileOpenArchive = SFileOpenArchive;
+        PHYSFS_SFileCloseArchive = SFileCloseArchive;
+        PHYSFS_SFileOpenFileEx = SFileOpenFileEx;
+        PHYSFS_SFileGetFileSize = SFileGetFileSize;
+        PHYSFS_SFileSetFilePointer = SFileSetFilePointer;
+        PHYSFS_SFileReadFile = SFileReadFile;
+        PHYSFS_SFileCloseFile = SFileCloseFile;
+        PHYSFS_SFileGetFileInfo = SFileGetFileInfo;
+    }
+}
+#endif
+
 static void *MPQ_openArchive(PHYSFS_Io *io, const char *name,
                              int forWriting, int *claimed)
 {
@@ -130,7 +195,11 @@ static void *MPQ_openArchive(PHYSFS_Io *io, const char *name,
 
     BAIL_IF(forWriting, PHYSFS_ERR_READ_ONLY, NULL);
 
-    if (!SFileOpenArchive(name, 0, dwFlags, &hMpq))
+#if PHYSFS_USE_EXTERNAL_STORMDLL && defined(_WIN32)
+    MPQ_LoadExternalStormLib();
+#endif
+
+    if (!PHYSFS_SFileOpenArchive(name, 0, dwFlags, &hMpq))
         return NULL;
 
     *claimed = 1;
@@ -189,7 +258,7 @@ static PHYSFS_Io *MPQ_openRead(void *opaque, const char *filename)
     if (!filename2)
         return NULL;
 
-    success = SFileOpenFileEx(((MPQHandle *)opaque)->mpqHandle, filename2, 0, &hFile);
+    success = PHYSFS_SFileOpenFileEx(((MPQHandle *)opaque)->mpqHandle, filename2, 0, &hFile);
     allocator.Free(filename2);
 
     if (!success)
@@ -198,7 +267,7 @@ static PHYSFS_Io *MPQ_openRead(void *opaque, const char *filename)
     retval = (PHYSFS_Io *)allocator.Malloc(sizeof(PHYSFS_Io));
     if (!retval)
     {
-        SFileCloseFile(hFile);
+        PHYSFS_SFileCloseFile(hFile);
         return NULL;
     }
 
@@ -206,16 +275,16 @@ static PHYSFS_Io *MPQ_openRead(void *opaque, const char *filename)
     if (!handle)
     {
         allocator.Free(retval);
-        SFileCloseFile(hFile);
+        PHYSFS_SFileCloseFile(hFile);
         return NULL;
     }
 
-    dwFileSizeLo = SFileGetFileSize(hFile, &dwFileSizeHi);
+    dwFileSizeLo = PHYSFS_SFileGetFileSize(hFile, &dwFileSizeHi);
     if (dwFileSizeLo == SFILE_INVALID_SIZE || dwFileSizeHi != 0)
     {
         allocator.Free(retval);
         allocator.Free(hFile);
-        SFileCloseFile(hFile);
+        PHYSFS_SFileCloseFile(hFile);
         return NULL;
     }
 
@@ -262,23 +331,23 @@ static int MPQ_stat(void *opaque, const char *filename, PHYSFS_Stat *stat)
     if (!filename2)
         return 0;
 
-    success = SFileOpenFileEx(((MPQHandle *)opaque)->mpqHandle, filename2, 0, &hFile);
+    success = PHYSFS_SFileOpenFileEx(((MPQHandle *)opaque)->mpqHandle, filename2, 0, &hFile);
     allocator.Free(filename2);
 
     if (!success)
         return 0;
 
-    SFileGetFileInfo(hFile, SFileInfoFileSize, &fileSize, sizeof(fileSize), NULL);
+    PHYSFS_SFileGetFileInfo(hFile, SFileInfoFileSize, &fileSize, sizeof(fileSize), NULL);
     stat->filesize = fileSize;
 
     stat->modtime = 0;
-    SFileGetFileInfo(hFile, SFileInfoFileTime, &stat->modtime, sizeof(stat->modtime), NULL);
+    PHYSFS_SFileGetFileInfo(hFile, SFileInfoFileTime, &stat->modtime, sizeof(stat->modtime), NULL);
     stat->createtime = stat->modtime;
     stat->accesstime = 0;
     stat->filetype = PHYSFS_FILETYPE_REGULAR;
     stat->readonly = 1; /* .MPQ files are always read only */
 
-    SFileCloseFile(hFile);
+    PHYSFS_SFileCloseFile(hFile);
 
     return 1;
 }
@@ -290,7 +359,7 @@ static void MPQ_closeArchive(void *opaque)
     if (!handle)
         return;
 
-    SFileCloseArchive(handle->mpqHandle);
+    PHYSFS_SFileCloseArchive(handle->mpqHandle);
     handle->io->destroy(handle->io);
     allocator.Free(handle);
 }
