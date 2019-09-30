@@ -1,9 +1,9 @@
 include(vcpkg_common_functions)
-set(PHYSFS_VERSION 3.0.2)
-set(SOURCE_PATH ${CURRENT_BUILDTREES_DIR}/src/physfs-${PHYSFS_VERSION})
+set(PHYSFS_VERSION 3.1.0)
+set(SOURCE_PATH ${CURRENT_BUILDTREES_DIR}/src/physfs-4bef0bb415c06377ee854a9d79b24174dcab3252)
 vcpkg_download_distfile(ARCHIVE
     URLS "https://github.com/dgengin/physfs/archive/4bef0bb415c06377ee854a9d79b24174dcab3252.tar.gz"
-    FILENAME "physfs-${PHYSFS_VERSION}.tar.bz2"
+    FILENAME "physfs-${PHYSFS_VERSION}.tar.gz"
     SHA512 e547a1bc7d507f1042525d49451a6ce85ddf6fac194a9d2e34a56ecc1c54f045aba7d6230c603e65eb0be6bef280faa59ce10cd78a5ac66146b0e161c03e2114
 )
 vcpkg_extract_source_archive_ex(
