@@ -1236,7 +1236,9 @@ int PHYSFS_init(const char *argv0)
     if (!userDir) goto initFailed;
 
     /* Platform layer is required to append a dirsep. */
+    #ifndef __ANDROID__  /* it's an APK file, not a directory, on Android. */
     assert(baseDir[strlen(baseDir) - 1] == __PHYSFS_platformDirSeparator);
+    #endif
     assert(userDir[strlen(userDir) - 1] == __PHYSFS_platformDirSeparator);
 
     if (!initStaticArchivers()) goto initFailed;
@@ -2734,13 +2736,15 @@ PHYSFS_File *PHYSFS_openRead(const char *_fname)
                 io->destroy(io);
                 PHYSFS_setErrorCode(PHYSFS_ERR_OUT_OF_MEMORY);
             } /* if */
-
-            memset(fh, '\0', sizeof (FileHandle));
-            fh->io = io;
-            fh->forReading = 1;
-            fh->dirHandle = i;
-            fh->next = openReadList;
-            openReadList = fh;
+            else
+            {
+                memset(fh, '\0', sizeof (FileHandle));
+                fh->io = io;
+                fh->forReading = 1;
+                fh->dirHandle = i;
+                fh->next = openReadList;
+                openReadList = fh;
+            } /* else */
         } /* if */
     } /* if */
 
